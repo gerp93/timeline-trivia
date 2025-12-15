@@ -97,7 +97,7 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 		break
 	}
 
-	if !auth.PasswordMatchesHash(password, deckPasswordHash) {
+	if !auth.PasswordMatchesHash(password, deckPasswordHash.String) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("Provided password is not valid."))
 		return

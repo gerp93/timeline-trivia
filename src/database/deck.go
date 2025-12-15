@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"errors"
 	"log"
 	"time"
@@ -39,8 +40,7 @@ func SearchDecks(name string, page int) ([]DeckDetails, error) {
 			D.IS_PUBLIC_READONLY
 		FROM DECK AS D
 			LEFT JOIN CARD AS C ON C.DECK_ID = D.ID
-		WHERE D.IS_LOBBY_WILD_DECK = FALSE
-			AND D.NAME LIKE ?
+		WHERE D.NAME LIKE ?
 		GROUP BY D.ID
 		ORDER BY D.NAME
 		LIMIT 10 OFFSET ?
@@ -75,8 +75,7 @@ func CountDecks(name string) (int, error) {
 		SELECT
 			COUNT(*)
 		FROM DECK AS D
-		WHERE D.IS_LOBBY_WILD_DECK = FALSE
-			AND D.NAME LIKE ?
+		WHERE D.NAME LIKE ?
 	`
 	rows, err := query(sqlString, name)
 	if err != nil {
@@ -153,8 +152,8 @@ func GetDeck(id uuid.UUID) (Deck, error) {
 	return deck, nil
 }
 
-func GetDeckPasswordHash(id uuid.UUID) (string, error) {
-	var passwordHash string
+func GetDeckPasswordHash(id uuid.UUID) (sql.NullString, error) {
+	var passwordHash sql.NullString
 
 	sqlString := `
 		SELECT

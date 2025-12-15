@@ -24,7 +24,7 @@ type BasePageData struct {
 func MiddlewareForPages(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		basePageData := BasePageData{
-			PageTitle: "Card Judge",
+			PageTitle: "Chronology",
 			User:      database.User{},
 			LoggedIn:  false,
 		}
@@ -43,12 +43,9 @@ func MiddlewareForPages(next http.Handler) http.Handler {
 		// required to be logged in
 		if r.URL.Path == "/account" ||
 			r.URL.Path == "/users" ||
-			r.URL.Path == "/review" ||
-			r.URL.Path == "/lobbies" ||
 			r.URL.Path == "/decks" ||
-			strings.HasPrefix(r.URL.Path, "/stats/") ||
-			strings.HasPrefix(r.URL.Path, "/lobby/") ||
-			strings.HasPrefix(r.URL.Path, "/deck/") {
+			strings.HasPrefix(r.URL.Path, "/deck/") ||
+			strings.HasPrefix(r.URL.Path, "/chronology/") {
 			if !basePageData.LoggedIn {
 				auth.SetRedirectUrl(w, r.URL.Path+"?"+r.URL.RawQuery)
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -65,8 +62,7 @@ func MiddlewareForPages(next http.Handler) http.Handler {
 		}
 
 		// required to be admin
-		if r.URL.Path == "/users" ||
-			r.URL.Path == "/review" {
+		if r.URL.Path == "/users" {
 			if !basePageData.User.IsAdmin {
 				http.Redirect(w, r, "/", http.StatusSeeOther)
 				return

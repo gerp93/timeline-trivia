@@ -4,20 +4,14 @@
     href="/static/css/home.css"
 />
 <div id="home">
-    <h1>Card Judge</h1>
+    <h1>Chronology</h1>
     <div id="home-buttons">
         {{if .LoggedIn}}
-        <div>
-            <button onclick="window.location.href='/lobbies'">CAH Lobbies</button>
-        </div>
         <div>
             <button onclick="window.location.href='/chronology/lobbies'">Chronology Games</button>
         </div>
         <div>
             <button onclick="window.location.href='/decks'">Card Decks</button>
-        </div>
-        <div>
-            <button onclick="window.location.href='/stats'">Statistics</button>
         </div>
         <div>
             <button onclick="window.location.href='/account'">Account</button>
@@ -33,9 +27,6 @@
         {{if .User.IsAdmin}}
         <div>
             <button onclick="window.location.href='/users'">Users</button>
-        </div>
-        <div>
-            <button onclick="window.location.href='/review'">Review</button>
         </div>
         {{end}}
     </div>

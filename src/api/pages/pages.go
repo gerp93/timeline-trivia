@@ -15,7 +15,7 @@ import (
 
 func Home(w http.ResponseWriter, r *http.Request) {
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Home"
+	basePageData.PageTitle = "Chronology - Home"
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
@@ -33,7 +33,7 @@ func Home(w http.ResponseWriter, r *http.Request) {
 
 func About(w http.ResponseWriter, r *http.Request) {
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - About"
+	basePageData.PageTitle = "Chronology - About"
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
@@ -51,7 +51,7 @@ func About(w http.ResponseWriter, r *http.Request) {
 
 func Login(w http.ResponseWriter, r *http.Request) {
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Login"
+	basePageData.PageTitle = "Chronology - Login"
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
@@ -69,7 +69,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 func Account(w http.ResponseWriter, r *http.Request) {
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Account"
+	basePageData.PageTitle = "Chronology - Account"
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
@@ -87,7 +87,7 @@ func Account(w http.ResponseWriter, r *http.Request) {
 
 func Users(w http.ResponseWriter, r *http.Request) {
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Users"
+	basePageData.PageTitle = "Chronology - Users"
 
 	var name string
 	var page int
@@ -152,406 +152,6 @@ func Users(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func Review(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Review"
-
-	var page int
-	params := r.URL.Query()
-	for key, val := range params {
-		switch key {
-		case "page":
-			page, _ = strconv.Atoi(val[0])
-		}
-	}
-
-	totalRowCount, err := database.CountCardsInReview()
-	if err != nil {
-		totalRowCount = 0
-	}
-	totalPageCount := max((totalRowCount+9)/10, 1)
-
-	if page < 1 {
-		page = 1
-	}
-
-	if page > totalPageCount {
-		page = totalPageCount
-	}
-
-	cards, err := database.SearchCardsInReview(page)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to get table rows"))
-		return
-	}
-
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/review.html",
-	)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to parse HTML"))
-		return
-	}
-
-	type data struct {
-		api.BasePageData
-		Page     int
-		LastPage int
-		RowCount int
-		Cards    []database.DisplayCard
-	}
-
-	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		Page:         page,
-		LastPage:     totalPageCount,
-		RowCount:     totalRowCount,
-		Cards:        cards,
-	})
-}
-
-func Stats(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Stats"
-
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats.html",
-	)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to parse HTML"))
-		return
-	}
-
-	_ = tmpl.ExecuteTemplate(w, "base", basePageData)
-}
-
-func StatsLeaderboard(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Stats - Leaderboard"
-
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats-leaderboard.html",
-	)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to parse HTML"))
-		return
-	}
-
-	_ = tmpl.ExecuteTemplate(w, "base", basePageData)
-}
-
-func StatsUsers(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Stats - Users"
-
-	var name string
-	var page int
-	params := r.URL.Query()
-	for key, val := range params {
-		switch key {
-		case "name":
-			name = val[0]
-		case "page":
-			page, _ = strconv.Atoi(val[0])
-		}
-	}
-
-	totalRowCount, err := database.CountUsers(name)
-	if err != nil {
-		totalRowCount = 0
-	}
-	totalPageCount := max((totalRowCount+9)/10, 1)
-
-	if page < 1 {
-		page = 1
-	}
-
-	if page > totalPageCount {
-		page = totalPageCount
-	}
-
-	users, err := database.SearchUsers(name, page)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to get table rows"))
-		return
-	}
-
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats-users.html",
-	)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to parse HTML"))
-		return
-	}
-
-	type data struct {
-		api.BasePageData
-		Name     string
-		Page     int
-		LastPage int
-		RowCount int
-		Users    []database.User
-	}
-
-	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		Name:         name,
-		Page:         page,
-		LastPage:     totalPageCount,
-		RowCount:     totalRowCount,
-		Users:        users,
-	})
-}
-
-func StatsUser(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Stats - User"
-
-	userIdString := r.PathValue("userId")
-	userId, err := uuid.Parse(userIdString)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte("Failed to parse id."))
-		return
-	}
-
-	userStats, err := database.GetStatsUser(userId)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("Failed to get user stats."))
-		return
-	}
-
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats-user.html",
-	)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to parse HTML"))
-		return
-	}
-
-	type data struct {
-		api.BasePageData
-		database.StatUser
-	}
-
-	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		StatUser:     userStats,
-	})
-}
-
-func StatsCards(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Stats - Cards"
-
-	var deckName string
-	var category string
-	var text string
-	var page int
-	params := r.URL.Query()
-	for key, val := range params {
-		switch key {
-		case "deckName":
-			deckName = val[0]
-		case "category":
-			category = val[0]
-		case "text":
-			text = val[0]
-		case "page":
-			page, _ = strconv.Atoi(val[0])
-		}
-	}
-
-	totalRowCount, err := database.CountCardsWithAccess(basePageData.User.Id, deckName, category, text)
-	if err != nil {
-		totalRowCount = 0
-	}
-	totalPageCount := max((totalRowCount+9)/10, 1)
-
-	if page < 1 {
-		page = 1
-	}
-
-	if page > totalPageCount {
-		page = totalPageCount
-	}
-
-	cards, err := database.SearchCardsWithAccess(basePageData.User.Id, deckName, category, text, page)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to get table rows"))
-		return
-	}
-
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats-cards.html",
-	)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to parse HTML"))
-		return
-	}
-
-	type data struct {
-		api.BasePageData
-		DeckName string
-		Category string
-		Text     string
-		Page     int
-		LastPage int
-		RowCount int
-		Cards    []database.DisplayCard
-	}
-
-	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		DeckName:     deckName,
-		Category:     category,
-		Text:         text,
-		Page:         page,
-		LastPage:     totalPageCount,
-		RowCount:     totalRowCount,
-		Cards:        cards,
-	})
-}
-
-func StatsCard(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Stats - Card"
-
-	cardIdString := r.PathValue("cardId")
-	cardId, err := uuid.Parse(cardIdString)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte("Failed to parse id."))
-		return
-	}
-
-	cardStats, err := database.GetStatsCard(cardId)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("Failed to get card stats."))
-		return
-	}
-
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats-card.html",
-	)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to parse HTML"))
-		return
-	}
-
-	type data struct {
-		api.BasePageData
-		database.StatCard
-	}
-
-	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		StatCard:     cardStats,
-	})
-}
-
-func Lobbies(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Lobbies"
-
-	var name string
-	var page int
-	params := r.URL.Query()
-	for key, val := range params {
-		switch key {
-		case "name":
-			name = val[0]
-		case "page":
-			page, _ = strconv.Atoi(val[0])
-		}
-	}
-
-	totalRowCount, err := database.CountLobbies(name)
-	if err != nil {
-		totalRowCount = 0
-	}
-	totalPageCount := max((totalRowCount+9)/10, 1)
-
-	if page < 1 {
-		page = 1
-	}
-
-	if page > totalPageCount {
-		page = totalPageCount
-	}
-
-	lobbies, err := database.SearchLobbies(name, page)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to get table rows"))
-		return
-	}
-
-	decks, err := database.GetReadableDecks(basePageData.User.Id)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to get user decks"))
-		return
-	}
-
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/lobbies.html",
-	)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to parse HTML"))
-		return
-	}
-
-	type data struct {
-		api.BasePageData
-		Name     string
-		Page     int
-		LastPage int
-		RowCount int
-		Lobbies  []database.LobbyDetails
-		Decks    []database.Deck
-	}
-
-	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		Name:         name,
-		Page:         page,
-		LastPage:     totalPageCount,
-		RowCount:     totalRowCount,
-		Lobbies:      lobbies,
-		Decks:        decks,
-	})
-}
-
 func Lobby(w http.ResponseWriter, r *http.Request) {
 	lobbyIdString := r.PathValue("lobbyId")
 	lobbyId, err := uuid.Parse(lobbyIdString)
@@ -572,7 +172,7 @@ func Lobby(w http.ResponseWriter, r *http.Request) {
 	}
 
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Lobby"
+	basePageData.PageTitle = "Chronology - Lobby"
 
 	hasLobbyAccess, err := database.UserHasLobbyAccess(basePageData.User.Id, lobbyId)
 	if err != nil {
@@ -583,13 +183,6 @@ func Lobby(w http.ResponseWriter, r *http.Request) {
 
 	if !hasLobbyAccess {
 		http.Redirect(w, r, fmt.Sprintf("/lobby/%s/access", lobbyId), http.StatusSeeOther)
-		return
-	}
-
-	decks, err := database.GetReadableDecks(basePageData.User.Id)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to get user decks"))
 		return
 	}
 
@@ -615,14 +208,12 @@ func Lobby(w http.ResponseWriter, r *http.Request) {
 		api.BasePageData
 		Lobby    database.Lobby
 		PlayerId uuid.UUID
-		Decks    []database.Deck
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
 		BasePageData: basePageData,
 		Lobby:        lobby,
 		PlayerId:     playerId,
-		Decks:        decks,
 	})
 }
 
@@ -684,7 +275,7 @@ func LobbyAccess(w http.ResponseWriter, r *http.Request) {
 
 func Decks(w http.ResponseWriter, r *http.Request) {
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Decks"
+	basePageData.PageTitle = "Chronology - Decks"
 
 	var name string
 	var page int
@@ -769,7 +360,7 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Deck"
+	basePageData.PageTitle = "Chronology - Deck"
 
 	hasDeckAccess, err := database.UserHasDeckAccess(basePageData.User.Id, deckId)
 	if err != nil {
@@ -873,7 +464,7 @@ func DeckAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Deck"
+	basePageData.PageTitle = "Chronology - Deck"
 
 	hasDeckAccess, err := database.UserHasDeckAccess(basePageData.User.Id, deckId)
 	if err != nil {
@@ -912,13 +503,12 @@ func DeckAccess(w http.ResponseWriter, r *http.Request) {
 // ChronologyLobbies displays the list of Chronology games
 func ChronologyLobbies(w http.ResponseWriter, r *http.Request) {
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Chronology"
+	basePageData.PageTitle = "Chronology - Games"
 
+	// Get readable decks for the current user
 	decks, err := database.GetReadableDecks(basePageData.User.Id)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to get user decks"))
-		return
+		decks = make([]database.Deck, 0)
 	}
 
 	tmpl, err := template.ParseFS(
@@ -964,7 +554,7 @@ func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
 	}
 
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Chronology"
+	basePageData.PageTitle = "Chronology - Game"
 
 	hasLobbyAccess, err := database.UserHasLobbyAccess(basePageData.User.Id, lobbyId)
 	if err != nil {
@@ -1085,7 +675,7 @@ func ChronologyLobbyAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Chronology Access"
+	basePageData.PageTitle = "Chronology - Access"
 
 	hasLobbyAccess, err := database.UserHasLobbyAccess(basePageData.User.Id, lobbyId)
 	if err != nil {

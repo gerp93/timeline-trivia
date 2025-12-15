@@ -51,7 +51,7 @@ type PlayerHandData struct {
 	PlayerId      uuid.UUID
 	PlayerIsJudge bool
 	PlayerIsReady bool
-	PlayerHand    []Card
+	PlayerHand    []interface{} // Card type removed
 }
 
 type PlayerSpecialsData struct {
@@ -125,7 +125,10 @@ type boardResponse struct {
 
 type boardResponseCard struct {
 	ResponseCardId uuid.UUID
-	Card
+	Id            uuid.UUID
+	Text          string
+	YouTube       sql.NullString
+	Image         sql.NullString
 	SpecialCategory sql.NullString
 }
 
@@ -725,24 +728,24 @@ func GetPlayerHandData(playerId uuid.UUID) (PlayerHandData, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var card Card
+		// Card type removed - stub implementation for Chronology-only build
+		var id uuid.UUID
+		var text string
+		var youtube sql.NullString
 		var imageBytes []byte
 		if err := rows.Scan(
-			&card.Id,
-			&card.Text,
-			&card.YouTube,
+			&id,
+			&text,
+			&youtube,
 			&imageBytes,
 		); err != nil {
 			log.Println(err)
 			return data, errors.New("failed to scan row in query results")
 		}
-
-		card.Image.Valid = imageBytes != nil
-		if card.Image.Valid {
-			card.Image.String = base64.StdEncoding.EncodeToString(imageBytes)
-		}
-
-		data.PlayerHand = append(data.PlayerHand, card)
+		_ = id
+		_ = text
+		_ = youtube
+		_ = imageBytes
 	}
 
 	return data, nil
