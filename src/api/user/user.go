@@ -3,10 +3,10 @@ package apiUser
 import (
 	"net/http"
 
+	gsApi "github.com/gerp93/gameshell-framework/api"
+	gsAuth "github.com/gerp93/gameshell-framework/auth"
+	gsDatabase "github.com/gerp93/gameshell-framework/database"
 	"github.com/google/uuid"
-	"github.com/grantfbarnes/card-judge/api"
-	"github.com/grantfbarnes/card-judge/auth"
-	"github.com/grantfbarnes/card-judge/database"
 )
 
 func Create(w http.ResponseWriter, r *http.Request) {
@@ -48,13 +48,13 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if database.UserNameExists(name) {
+	if gsDatabase.UserNameExists(name) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("User name already exists."))
 		return
 	}
 
-	err = database.CreateUser(name, password, false)
+	err = gsDatabase.CreateUser(name, password, false)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -106,13 +106,13 @@ func CreateAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if database.UserNameExists(name) {
+	if gsDatabase.UserNameExists(name) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("User name already exists."))
 		return
 	}
 
-	err = database.CreateUser(name, password, true)
+	err = gsDatabase.CreateUser(name, password, true)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -153,7 +153,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allowLogin, err := database.AllowUserLoginAttempt(r.RemoteAddr, name)
+	allowLogin, err := gsDatabase.AllowUserLoginAttempt(r.RemoteAddr, name)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -166,27 +166,27 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = database.AddUserLoginAttempt(r.RemoteAddr, name)
+	err = gsDatabase.AddUserLoginAttempt(r.RemoteAddr, name)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
 		return
 	}
 
-	if !database.UserNameExists(name) {
+	if !gsDatabase.UserNameExists(name) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("User name does not exist."))
 		return
 	}
 
-	userId, err := database.GetUserIdByName(name)
+	userId, err := gsDatabase.GetUserIdByName(name)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
 		return
 	}
 
-	isApproved, err := database.GetUserIsApproved(userId)
+	isApproved, err := gsDatabase.GetUserIsApproved(userId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -199,27 +199,27 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	passwordHash, err := database.GetUserPasswordHash(userId)
+	passwordHash, err := gsDatabase.GetUserPasswordHash(userId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
 		return
 	}
 
-	if !auth.PasswordMatchesHash(password, passwordHash) {
+	if !gsAuth.PasswordMatchesHash(password, passwordHash) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("Provided password is not valid."))
 		return
 	}
 
-	auth.SetUserId(w, userId)
+	gsAuth.SetUserId(w, userId)
 
 	w.Header().Add("HX-Refresh", "true")
 	w.WriteHeader(http.StatusOK)
 }
 
 func Logout(w http.ResponseWriter, _ *http.Request) {
-	auth.RemoveUserId(w)
+	gsAuth.RemoveUserId(w)
 	w.Header().Add("HX-Refresh", "true")
 	w.WriteHeader(http.StatusOK)
 }
@@ -259,13 +259,13 @@ func SetName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if database.UserNameExists(name) {
+	if gsDatabase.UserNameExists(name) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("User name already exists."))
 		return
 	}
 
-	err = database.SetUserName(userId, name)
+	err = gsDatabase.SetUserName(userId, name)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -317,14 +317,14 @@ func SetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	passwordHash, err := database.GetUserPasswordHash(userId)
+	passwordHash, err := gsDatabase.GetUserPasswordHash(userId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
 		return
 	}
 
-	if !auth.PasswordMatchesHash(currentPassword, passwordHash) {
+	if !gsAuth.PasswordMatchesHash(currentPassword, passwordHash) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("Provided current password is not valid."))
 		return
@@ -342,7 +342,7 @@ func SetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = database.SetUserPassword(userId, newPassword)
+	err = gsDatabase.SetUserPassword(userId, newPassword)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -368,7 +368,7 @@ func ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = database.SetUserPassword(userId, "password")
+	err = gsDatabase.SetUserPassword(userId, "password")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -394,7 +394,7 @@ func Approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = database.ApproveUser(userId)
+	err = gsDatabase.ApproveUser(userId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -440,7 +440,7 @@ func SetColorTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = database.SetUserColorTheme(userId, colorTheme)
+	err = gsDatabase.SetUserColorTheme(userId, colorTheme)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -480,7 +480,7 @@ func SetIsAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err = database.SetUserIsAdmin(userId, isAdmin)
+	err = gsDatabase.SetUserIsAdmin(userId, isAdmin)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -507,7 +507,7 @@ func Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = database.DeleteUser(userId)
+	err = gsDatabase.DeleteUser(userId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -515,7 +515,7 @@ func Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isCurrentUser {
-		auth.RemoveUserId(w)
+		gsAuth.RemoveUserId(w)
 	}
 
 	w.Header().Add("HX-Refresh", "true")
@@ -523,16 +523,16 @@ func Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func isCurrentUser(r *http.Request, checkId uuid.UUID) bool {
-	userId := api.GetUserId(r)
+	userId := gsApi.GetUserId(r)
 	return userId == checkId
 }
 
 func isAdmin(r *http.Request) bool {
-	userId := api.GetUserId(r)
+	userId := gsApi.GetUserId(r)
 	if userId == uuid.Nil {
 		return false
 	}
 
-	isAdmin, _ := database.GetUserIsAdmin(userId)
+	isAdmin, _ := gsDatabase.GetUserIsAdmin(userId)
 	return isAdmin
 }

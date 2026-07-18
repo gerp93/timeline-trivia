@@ -7,14 +7,16 @@ import (
 	"net/http"
 	"strconv"
 
+	gsApi "github.com/gerp93/gameshell-framework/api"
+	gsDatabase "github.com/gerp93/gameshell-framework/database"
 	"github.com/google/uuid"
-	"github.com/grantfbarnes/card-judge/api"
-	"github.com/grantfbarnes/card-judge/database"
-	"github.com/grantfbarnes/card-judge/static"
+
+	"github.com/gerp93/card-timeline/database"
+	"github.com/gerp93/card-timeline/static"
 )
 
 func Home(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
+	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Chronology - Home"
 
 	tmpl, err := template.ParseFS(
@@ -32,7 +34,7 @@ func Home(w http.ResponseWriter, r *http.Request) {
 }
 
 func About(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
+	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Chronology - About"
 
 	tmpl, err := template.ParseFS(
@@ -50,7 +52,7 @@ func About(w http.ResponseWriter, r *http.Request) {
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
+	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Chronology - Login"
 
 	tmpl, err := template.ParseFS(
@@ -68,7 +70,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func Account(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
+	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Chronology - Account"
 
 	tmpl, err := template.ParseFS(
@@ -86,7 +88,7 @@ func Account(w http.ResponseWriter, r *http.Request) {
 }
 
 func Users(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
+	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Chronology - Users"
 
 	var name string
@@ -101,7 +103,7 @@ func Users(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	totalRowCount, err := database.CountUsers(name)
+	totalRowCount, err := gsDatabase.CountUsers(name)
 	if err != nil {
 		totalRowCount = 0
 	}
@@ -115,7 +117,7 @@ func Users(w http.ResponseWriter, r *http.Request) {
 		page = totalPageCount
 	}
 
-	users, err := database.SearchUsers(name, page)
+	users, err := gsDatabase.SearchUsers(name, page)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to get table rows"))
@@ -134,12 +136,12 @@ func Users(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		api.BasePageData
+		gsApi.BasePageData
 		Name     string
 		Page     int
 		LastPage int
 		RowCount int
-		Users    []database.User
+		Users    []gsDatabase.User
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
@@ -152,129 +154,8 @@ func Users(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func Lobby(w http.ResponseWriter, r *http.Request) {
-	lobbyIdString := r.PathValue("lobbyId")
-	lobbyId, err := uuid.Parse(lobbyIdString)
-	if err != nil {
-		http.Redirect(w, r, "/lobbies", http.StatusSeeOther)
-		return
-	}
-
-	lobby, err := database.GetLobby(lobbyId)
-	if err != nil {
-		http.Redirect(w, r, "/lobbies", http.StatusSeeOther)
-		return
-	}
-
-	if lobby.Id == uuid.Nil {
-		http.Redirect(w, r, "/lobbies", http.StatusSeeOther)
-		return
-	}
-
-	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - Lobby"
-
-	hasLobbyAccess, err := database.UserHasLobbyAccess(basePageData.User.Id, lobbyId)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to check lobby access"))
-		return
-	}
-
-	if !hasLobbyAccess {
-		http.Redirect(w, r, fmt.Sprintf("/lobby/%s/access", lobbyId), http.StatusSeeOther)
-		return
-	}
-
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/lobby.html",
-	)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to parse HTML"))
-		return
-	}
-
-	playerId, err := database.AddUserToLobby(lobbyId, basePageData.User.Id)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to join lobby"))
-		return
-	}
-
-	type data struct {
-		api.BasePageData
-		Lobby    database.Lobby
-		PlayerId uuid.UUID
-	}
-
-	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		Lobby:        lobby,
-		PlayerId:     playerId,
-	})
-}
-
-func LobbyAccess(w http.ResponseWriter, r *http.Request) {
-	lobbyIdString := r.PathValue("lobbyId")
-	lobbyId, err := uuid.Parse(lobbyIdString)
-	if err != nil {
-		http.Redirect(w, r, "/lobbies", http.StatusSeeOther)
-		return
-	}
-
-	lobby, err := database.GetLobby(lobbyId)
-	if err != nil {
-		http.Redirect(w, r, "/lobbies", http.StatusSeeOther)
-		return
-	}
-
-	if lobby.Id == uuid.Nil {
-		http.Redirect(w, r, "/lobbies", http.StatusSeeOther)
-		return
-	}
-
-	basePageData := api.GetBasePageData(r)
-	basePageData.PageTitle = "Card Judge - Lobby Access"
-
-	hasLobbyAccess, err := database.UserHasLobbyAccess(basePageData.User.Id, lobbyId)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to check lobby access"))
-		return
-	}
-
-	if hasLobbyAccess {
-		http.Redirect(w, r, fmt.Sprintf("/lobby/%s", lobbyId), http.StatusSeeOther)
-		return
-	}
-
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/lobby-access.html",
-	)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to parse HTML"))
-		return
-	}
-
-	type data struct {
-		api.BasePageData
-		Lobby database.Lobby
-	}
-
-	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		Lobby:        lobby,
-	})
-}
-
 func Decks(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
+	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Chronology - Decks"
 
 	var name string
@@ -322,7 +203,7 @@ func Decks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		api.BasePageData
+		gsApi.BasePageData
 		Name     string
 		Page     int
 		LastPage int
@@ -359,7 +240,7 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	basePageData := api.GetBasePageData(r)
+	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Chronology - Deck"
 
 	hasDeckAccess, err := database.UserHasDeckAccess(basePageData.User.Id, deckId)
@@ -422,7 +303,7 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		api.BasePageData
+		gsApi.BasePageData
 		Deck     database.Deck
 		Category string
 		Text     string
@@ -463,7 +344,7 @@ func DeckAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	basePageData := api.GetBasePageData(r)
+	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Chronology - Deck"
 
 	hasDeckAccess, err := database.UserHasDeckAccess(basePageData.User.Id, deckId)
@@ -490,7 +371,7 @@ func DeckAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		api.BasePageData
+		gsApi.BasePageData
 		Deck database.Deck
 	}
 
@@ -502,7 +383,7 @@ func DeckAccess(w http.ResponseWriter, r *http.Request) {
 
 // ChronologyLobbies displays the list of Chronology games
 func ChronologyLobbies(w http.ResponseWriter, r *http.Request) {
-	basePageData := api.GetBasePageData(r)
+	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Chronology - Games"
 
 	// Get readable decks for the current user
@@ -523,7 +404,7 @@ func ChronologyLobbies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		api.BasePageData
+		gsApi.BasePageData
 		Decks []database.Deck
 	}
 
@@ -553,10 +434,10 @@ func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	basePageData := api.GetBasePageData(r)
+	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Chronology - Game"
 
-	hasLobbyAccess, err := database.UserHasLobbyAccess(basePageData.User.Id, lobbyId)
+	hasLobbyAccess, err := gsDatabase.UserHasLobbyAccess(basePageData.User.Id, lobbyId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to check lobby access"))
@@ -569,7 +450,7 @@ func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get or create player for this user
-	playerId, err := database.AddUserToLobby(lobbyId, basePageData.User.Id)
+	playerId, err := gsDatabase.AddUserToLobby(lobbyId, basePageData.User.Id)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to join lobby"))
@@ -610,7 +491,7 @@ func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
 	var currentPlayerName string
 	var isMyTurn bool
 	if game.CurrentPlayerId.Valid {
-		player, _ := database.GetPlayer(game.CurrentPlayerId.UUID)
+		player, _ := gsDatabase.GetPlayer(game.CurrentPlayerId.UUID)
 		currentPlayerName = player.Name
 		isMyTurn = game.CurrentPlayerId.UUID == playerId
 	}
@@ -618,7 +499,7 @@ func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
 	// Get winner name if game is finished
 	var winnerName string
 	if game.WinnerId.Valid {
-		user, _ := database.GetUser(game.WinnerId.UUID)
+		user, _ := gsDatabase.GetUser(game.WinnerId.UUID)
 		winnerName = user.Name
 	}
 
@@ -634,7 +515,7 @@ func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		api.BasePageData
+		gsApi.BasePageData
 		Lobby             database.Lobby
 		Game              database.ChronologyGame
 		PlayerId          uuid.UUID
@@ -674,10 +555,10 @@ func ChronologyLobbyAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	basePageData := api.GetBasePageData(r)
+	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Chronology - Access"
 
-	hasLobbyAccess, err := database.UserHasLobbyAccess(basePageData.User.Id, lobbyId)
+	hasLobbyAccess, err := gsDatabase.UserHasLobbyAccess(basePageData.User.Id, lobbyId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to check lobby access"))
@@ -701,7 +582,7 @@ func ChronologyLobbyAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		api.BasePageData
+		gsApi.BasePageData
 		Lobby database.Lobby
 	}
 

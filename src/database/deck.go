@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
+	gsAuth "github.com/gerp93/gameshell-framework/auth"
 	"github.com/google/uuid"
-	"github.com/grantfbarnes/card-judge/auth"
 )
 
 type Deck struct {
@@ -184,7 +184,7 @@ func CreateDeck(name string, password string, isPublicReadOnly bool) (uuid.UUID,
 		return id, errors.New("failed to generate new id")
 	}
 
-	passwordHash, err := auth.GetPasswordHash(password)
+	passwordHash, err := gsAuth.GetPasswordHash(password)
 	if err != nil {
 		log.Println(err)
 		return id, errors.New("failed to hash password")
@@ -241,7 +241,7 @@ func SetIsPublicReadOnly(id uuid.UUID, isPublicReadOnly bool) error {
 }
 
 func SetDeckPassword(id uuid.UUID, password string) error {
-	passwordHash, err := auth.GetPasswordHash(password)
+	passwordHash, err := gsAuth.GetPasswordHash(password)
 	if err != nil {
 		log.Println(err)
 		return errors.New("failed to hash password")

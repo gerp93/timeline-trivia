@@ -1,7 +1,6 @@
 package database
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -9,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
+	gsDatabase "github.com/gerp93/gameshell-framework/database"
 	"github.com/google/uuid"
-	"github.com/grantfbarnes/card-judge/auth"
 )
 
 // ChronologyGame represents a Chronology game instance
@@ -26,11 +25,11 @@ type ChronologyGame struct {
 
 // ChronologyTimelineCard represents a card in a player's timeline
 type ChronologyTimelineCard struct {
-	Id          uuid.UUID
-	CardId      uuid.UUID
-	CardText    string
-	CardYear    int
-	Position    int
+	Id           uuid.UUID
+	CardId       uuid.UUID
+	CardText     string
+	CardYear     int
+	Position     int
 	PlacedOnDate time.Time
 }
 
@@ -129,42 +128,10 @@ func CreateChronologyGame(lobbyId uuid.UUID, cardsToWin int) (uuid.UUID, error) 
 	return id, execute(sqlString, id, lobbyId, cardsToWin)
 }
 
-// CreateChronologyLobby creates a new lobby specifically for Chronology
+// CreateChronologyLobby creates a new lobby for Chronology, delegating base
+// lobby creation to the gameshell framework.
 func CreateChronologyLobby(name string, password string) (uuid.UUID, error) {
-	id, err := uuid.NewUUID()
-	if err != nil {
-		log.Println(err)
-		return id, errors.New("failed to generate new id")
-	}
-
-	var passwordHash sql.NullString
-	if password != "" {
-		hash, err := getPasswordHash(password)
-		if err != nil {
-			log.Println(err)
-			return id, errors.New("failed to hash password")
-		}
-		passwordHash = sql.NullString{String: hash, Valid: true}
-	}
-
-	sqlString := `
-		INSERT INTO LOBBY(
-			ID,
-			NAME,
-			GAME_TYPE,
-			PASSWORD_HASH,
-			DRAW_PRIORITY,
-			HAND_SIZE,
-			FREE_CREDITS,
-			WIN_STREAK_THRESHOLD,
-			LOSE_STREAK_THRESHOLD
-		)
-		VALUES (?, ?, 'chronology', ?, 'RANDOM', 0, 0, 0, 0)
-	`
-	if passwordHash.Valid {
-		return id, execute(sqlString, id, name, passwordHash.String)
-	}
-	return id, execute(sqlString, id, name, nil)
+	return gsDatabase.CreateLobby(name, "", password)
 }
 
 // InitializeChronologyDrawPile populates the draw pile with cards from decks
@@ -361,7 +328,7 @@ func GetAllPlayerTimelines(gameId uuid.UUID, currentPlayerId uuid.UUID, viewingP
 	}
 
 	result := make([]ChronologyPlayerTimeline, 0, len(players))
-	
+
 	// First add current player
 	for _, p := range players {
 		if p.IsActive && p.PlayerId == currentPlayerId {
@@ -586,7 +553,7 @@ func StartChronologyGame(gameId uuid.UUID) error {
 				return err
 			}
 			defer rows.Close()
-			
+
 			if rows.Next() {
 				if err := rows.Scan(&cardId, &cardYear); err != nil {
 					return err
@@ -746,7 +713,6 @@ func SearchChronologyLobbies(name string, page int) ([]ChronologyLobbyDetails, e
 			LEFT JOIN CHRONOLOGY_GAME AS CG ON CG.LOBBY_ID = L.ID
 			LEFT JOIN PLAYER AS P ON P.LOBBY_ID = L.ID AND P.IS_ACTIVE = 1
 		WHERE L.NAME LIKE ?
-			AND L.GAME_TYPE = 'chronology'
 		GROUP BY L.ID
 		ORDER BY L.CREATED_ON_DATE DESC
 		LIMIT 10 OFFSET ?
@@ -782,7 +748,7 @@ func CountChronologyLobbies(name string) (int, error) {
 	sqlString := `
 		SELECT COUNT(*)
 		FROM LOBBY
-		WHERE NAME LIKE ? AND GAME_TYPE = 'chronology'
+		WHERE NAME LIKE ?
 	`
 	rows, err := query(sqlString, name)
 	if err != nil {
@@ -799,10 +765,4 @@ func CountChronologyLobbies(name string) (int, error) {
 	}
 
 	return count, nil
-}
-
-// Helper function to get password hash (reuse from auth package)
-func getPasswordHash(password string) (string, error) {
-	// Use the auth package's password hashing
-	return auth.GetPasswordHash(password)
 }

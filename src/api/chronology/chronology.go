@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"strconv"
 
+	gsApi "github.com/gerp93/gameshell-framework/api"
+	gsDatabase "github.com/gerp93/gameshell-framework/database"
+	gsWebsocket "github.com/gerp93/gameshell-framework/websocket"
 	"github.com/google/uuid"
-	"github.com/grantfbarnes/card-judge/api"
-	"github.com/grantfbarnes/card-judge/database"
-	"github.com/grantfbarnes/card-judge/static"
-	"github.com/grantfbarnes/card-judge/websocket"
+
+	"github.com/gerp93/card-timeline/database"
+	"github.com/gerp93/card-timeline/static"
 )
 
 // Chronology deck ID
@@ -144,7 +146,7 @@ func StartGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Notify all players via WebSocket to reload the page
-	websocket.LobbyBroadcast(lobbyId, "reload")
+	gsWebsocket.LobbyBroadcast(lobbyId, "reload")
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("Game started!"))
@@ -180,7 +182,7 @@ func ResetGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Notify all players to reload the page
-	websocket.LobbyBroadcast(lobbyId, "reload")
+	gsWebsocket.LobbyBroadcast(lobbyId, "reload")
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("Game reset! Starting new game..."))
@@ -196,10 +198,10 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userId := api.GetUserId(r)
+	userId := gsApi.GetUserId(r)
 
 	// Get player ID for this user in this lobby
-	player, err := database.GetLobbyUserPlayer(lobbyId, userId)
+	player, err := gsDatabase.GetLobbyUserPlayer(lobbyId, userId)
 	if err != nil || player.Id == uuid.Nil {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte("not a player in this game"))
@@ -241,8 +243,8 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 	winnerId, err := database.CheckChronologyWinner(game.Id)
 	if err == nil && winnerId != uuid.Nil {
 		// Game over!
-		websocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:You win!", player.Name))
-		websocket.LobbyBroadcast(lobbyId, "refresh")
+		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:You win!", player.Name))
+		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("You win!"))
 		return
@@ -258,7 +260,7 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 	// Draw new card for next player
 	if err := database.DrawChronologyCard(game.Id); err != nil {
 		// No more cards - game over
-		websocket.LobbyBroadcast(lobbyId, "refresh")
+		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
 		if correct {
 			_, _ = w.Write([]byte("Correct! No more cards."))
@@ -269,13 +271,13 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if correct {
-		websocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:Correct!", player.Name))
-		websocket.LobbyBroadcast(lobbyId, "refresh")
+		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:Correct!", player.Name))
+		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Correct! Next player's turn."))
 	} else {
-		websocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:incorrect:Wrong!", player.Name))
-		websocket.LobbyBroadcast(lobbyId, "refresh")
+		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:incorrect:Wrong!", player.Name))
+		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Incorrect. Next player's turn."))
 	}
@@ -291,7 +293,7 @@ func GetGameState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userId := api.GetUserId(r)
+	userId := gsApi.GetUserId(r)
 
 	game, err := database.GetChronologyGame(lobbyId)
 	if err != nil || game.Id == uuid.Nil {
@@ -301,7 +303,7 @@ func GetGameState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get player for this user
-	player, err := database.GetLobbyUserPlayer(lobbyId, userId)
+	player, err := gsDatabase.GetLobbyUserPlayer(lobbyId, userId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to get player"))
@@ -374,7 +376,7 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userId := api.GetUserId(r)
+	userId := gsApi.GetUserId(r)
 
 	game, err := ensureGameExists(lobbyId)
 	if err != nil || game.Id == uuid.Nil {
@@ -383,7 +385,7 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	player, err := database.GetLobbyUserPlayer(lobbyId, userId)
+	player, err := gsDatabase.GetLobbyUserPlayer(lobbyId, userId)
 	if err != nil || player.Id == uuid.Nil {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte("not a player"))
@@ -395,7 +397,7 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 	if game.CurrentPlayerId.Valid {
 		currentPlayerId = game.CurrentPlayerId.UUID
 	}
-	
+
 	allTimelines, err := database.GetAllPlayerTimelines(game.Id, currentPlayerId, player.Id)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)

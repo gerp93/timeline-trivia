@@ -3,10 +3,12 @@ package apiAccess
 import (
 	"net/http"
 
+	gsApi "github.com/gerp93/gameshell-framework/api"
+	gsAuth "github.com/gerp93/gameshell-framework/auth"
+	gsDatabase "github.com/gerp93/gameshell-framework/database"
 	"github.com/google/uuid"
-	"github.com/grantfbarnes/card-judge/api"
-	"github.com/grantfbarnes/card-judge/auth"
-	"github.com/grantfbarnes/card-judge/database"
+
+	"github.com/gerp93/card-timeline/database"
 )
 
 func Lobby(w http.ResponseWriter, r *http.Request) {
@@ -18,7 +20,7 @@ func Lobby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lobbyPasswordHash, err := database.GetLobbyPasswordHash(lobbyId)
+	lobbyPasswordHash, err := gsDatabase.GetLobbyPasswordHash(lobbyId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
@@ -41,20 +43,20 @@ func Lobby(w http.ResponseWriter, r *http.Request) {
 		break
 	}
 
-	if !auth.PasswordMatchesHash(password, lobbyPasswordHash.String) {
+	if !gsAuth.PasswordMatchesHash(password, lobbyPasswordHash.String) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("Provided password is not valid."))
 		return
 	}
 
-	userId := api.GetUserId(r)
+	userId := gsApi.GetUserId(r)
 	if userId == uuid.Nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("Failed to get user id."))
 		return
 	}
 
-	err = database.AddUserLobbyAccess(userId, lobbyId)
+	err = gsDatabase.AddUserLobbyAccess(userId, lobbyId)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("Failed to add access."))
@@ -97,13 +99,13 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 		break
 	}
 
-	if !auth.PasswordMatchesHash(password, deckPasswordHash.String) {
+	if !gsAuth.PasswordMatchesHash(password, deckPasswordHash.String) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("Provided password is not valid."))
 		return
 	}
 
-	userId := api.GetUserId(r)
+	userId := gsApi.GetUserId(r)
 	if userId == uuid.Nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("Failed to get user id."))
