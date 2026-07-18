@@ -33,32 +33,30 @@
     </div>
 
     <!-- Controls (Start Game / Game Over only) -->
-    {{if eq .Game.GameStatus "waiting"}}
     <div id="chronology-controls">
+        {{if eq .Game.GameStatus "waiting"}}
         <p>Waiting for players to join...</p>
-        <button 
+        <button
             hx-post="/api/chronology/{{.Lobby.Id}}/start"
             hx-target="#chronology-message">
             Start Game
         </button>
         <div id="chronology-message"></div>
-    </div>
-    {{else if eq .Game.GameStatus "finished"}}
-    <div id="chronology-controls">
+        {{else if eq .Game.GameStatus "finished"}}
         {{if .Game.WinnerId.Valid}}
         <p class="winner-text">🎉 Winner: <strong>{{.WinnerName}}</strong></p>
         {{end}}
-        <button 
+        <button
             hx-post="/api/chronology/{{.Lobby.Id}}/reset"
             hx-target="#chronology-message">
             Start New Game
         </button>
         <a href="/chronology/lobbies" class="btn-link">Back to Games</a>
         <div id="chronology-message"></div>
+        {{else}}
+        <div id="chronology-message"></div>
+        {{end}}
     </div>
-    {{else}}
-    <div id="chronology-message"></div>
-    {{end}}
 </div>
 
 <!-- Chat -->

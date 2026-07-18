@@ -47,11 +47,15 @@ function initChronologyWebSocket(lobbyId, playerId) {
                 return;
 
             case "reload":
-                // Full page reload (for game start/reset)
-                // Small delay to ensure any in-flight requests complete
-                console.log("[Chronology WS] Reloading page in 500ms...");
+                // Game start/reset: refresh game state and controls without a
+                // full page navigation. A full location.reload() drops this
+                // websocket connection; if this player is the only client,
+                // the server deletes the (now empty) lobby before the reload
+                // can finish, destroying the game that was just started.
+                console.log("[Chronology WS] Refreshing game in 500ms...");
                 setTimeout(() => {
-                    location.reload();
+                    refreshGameState(lobbyId);
+                    refreshControls(lobbyId);
                 }, 500);
                 return;
 
@@ -132,6 +136,24 @@ function refreshGameState(lobbyId) {
             }
         })
         .catch(e => console.error("[Chronology] draw-pile-count error:", e));
+}
+
+function refreshControls(lobbyId) {
+    // Re-fetches the current page and swaps in just the #chronology-controls
+    // block (Start/Reset button, waiting/winner text) so a game-status change
+    // is reflected without a full page navigation.
+    fetch(location.pathname, { cache: "no-store" })
+        .then(response => response.text())
+        .then(html => {
+            const doc = new DOMParser().parseFromString(html, "text/html");
+            const newControls = doc.getElementById("chronology-controls");
+            const currentControls = document.getElementById("chronology-controls");
+            if (newControls && currentControls) {
+                currentControls.outerHTML = newControls.outerHTML;
+                htmx.process(document.getElementById("chronology-controls"));
+            }
+        })
+        .catch(e => console.error("[Chronology] controls refresh error:", e));
 }
 
 function addChatMessage(message) {
