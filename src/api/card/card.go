@@ -3,6 +3,8 @@ package apiCard
 import (
 	"database/sql"
 	"encoding/csv"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +15,12 @@ import (
 
 	"github.com/gerp93/card-timeline/database"
 )
+
+// maxImportUploadBytes bounds how much request body an /card-import request
+// may send, independent of how many cards that JSON decodes to (which
+// database.ParseCardImportJSON separately caps) — this stops a client from
+// making the server buffer and parse an arbitrarily large body at all.
+const maxImportUploadBytes = 2 << 20 // 2 MiB
 
 // parseYear turns a form value into a nullable year. Empty = NULL.
 func parseYear(value string) (sql.NullInt64, bool) {
@@ -209,4 +217,63 @@ func GetCardExport(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = writer.Write([]string{card.Text, year})
 	}
+}
+
+// ImportJSON accepts an uploaded JSON file of
+// [{"year": number, "event": string, "category": string}, ...] and inserts
+// any cards from it that aren't already in the deck (matched by event
+// text). See database.ParseCardImportJSON for the exact, strictly enforced
+// schema — anything else is rejected.
+func ImportJSON(w http.ResponseWriter, r *http.Request) {
+	deckId, err := uuid.Parse(r.PathValue("deckId"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("Failed to get deck id from path."))
+		return
+	}
+
+	if !hasDeckAccess(w, r, deckId) {
+		return
+	}
+
+	// Cap the request body before doing any work with it, independent of
+	// what the client claims Content-Length is.
+	r.Body = http.MaxBytesReader(w, r.Body, maxImportUploadBytes)
+	if err := r.ParseMultipartForm(maxImportUploadBytes); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(fmt.Sprintf("Upload too large or malformed (max %d MB).", maxImportUploadBytes/(1<<20))))
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("No file found in upload."))
+		return
+	}
+	defer file.Close()
+
+	if !strings.HasSuffix(strings.ToLower(header.Filename), ".json") {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("File must be a .json file."))
+		return
+	}
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("Failed to read uploaded file."))
+		return
+	}
+
+	imported, skipped, err := database.ImportCardsIntoDeck(deckId, data)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(err.Error()))
+		return
+	}
+
+	w.Header().Add("HX-Refresh", "true")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(fmt.Sprintf("Imported %d card(s); skipped %d already in this deck.", imported, skipped)))
 }
