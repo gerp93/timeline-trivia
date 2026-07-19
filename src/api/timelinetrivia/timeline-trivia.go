@@ -604,6 +604,62 @@ func GetPlayers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// CardCount returns, as plain text, how many cards across the given decks
+// would end up in the draw pile — restricted to the given year range(s) if
+// any are provided, or every year otherwise. Used by the lobby-creation
+// form for a live estimate: called once with every currently-entered range
+// for the "Select Decks" total, and once per range (with just that range)
+// for each range row's own count.
+func CardCount(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("0"))
+		return
+	}
+
+	deckIdStrings := r.Form["deckId"]
+	deckIds := make([]uuid.UUID, 0, len(deckIdStrings))
+	for _, s := range deckIdStrings {
+		if id, err := uuid.Parse(s); err == nil {
+			deckIds = append(deckIds, id)
+		}
+	}
+	if len(deckIds) == 0 {
+		_, _ = w.Write([]byte("0"))
+		return
+	}
+
+	fromYears := r.Form["fromYear"]
+	toYears := r.Form["toYear"]
+	ranges := make([]database.TimelineTriviaYearRange, 0, len(fromYears))
+	for i := range fromYears {
+		if i >= len(toYears) {
+			break
+		}
+		if fromYears[i] == "" || toYears[i] == "" {
+			continue
+		}
+		from, fromErr := strconv.Atoi(fromYears[i])
+		to, toErr := strconv.Atoi(toYears[i])
+		if fromErr != nil || toErr != nil {
+			continue // ignore invalid rows for a live estimate rather than erroring
+		}
+		if from > to {
+			from, to = to, from
+		}
+		ranges = append(ranges, database.TimelineTriviaYearRange{FromYear: from, ToYear: to})
+	}
+
+	count, err := database.CountCardsInDecksForRanges(deckIds, ranges)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("0"))
+		return
+	}
+
+	_, _ = w.Write([]byte(strconv.Itoa(count)))
+}
+
 // Search returns lobby search results
 func Search(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")

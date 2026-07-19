@@ -63,7 +63,7 @@
         </details>
         <br />
         <details open>
-            <summary>Select Decks</summary>
+            <summary>Select Decks <span id="deck-total-count" style="font-weight: normal; font-size: 0.85em; opacity: 0.8;"></span></summary>
             <div style="max-height: 200px; overflow-y: auto; padding: 10px;">
                 {{range .Decks}}
                 <div>
@@ -72,6 +72,7 @@
                         id="deck-{{.Id}}"
                         name="deckId"
                         value="{{.Id}}"
+                        onchange="scheduleCardCountRecalc()"
                     />
                     <label for="deck-{{.Id}}">{{.Name}}</label>
                 </div>
@@ -98,10 +99,11 @@
 
 <template id="year-range-row-template">
     <div class="year-range-row" style="display: flex; gap: 6px; align-items: center; margin-bottom: 6px;">
-        <input type="number" name="fromYear" placeholder="From year" style="width: 8em;" />
+        <input type="number" name="fromYear" placeholder="From year" style="width: 8em;" oninput="scheduleCardCountRecalc()" />
         <span>–</span>
-        <input type="number" name="toYear" placeholder="To year" style="width: 8em;" />
-        <button type="button" onclick="this.closest('.year-range-row').remove()" title="Remove range">
+        <input type="number" name="toYear" placeholder="To year" style="width: 8em;" oninput="scheduleCardCountRecalc()" />
+        <span class="year-range-count" style="font-size: 0.85em; opacity: 0.8; min-width: 6em;"></span>
+        <button type="button" onclick="this.closest('.year-range-row').remove(); scheduleCardCountRecalc();" title="Remove range">
             <span class="bi bi-x-lg"></span>
         </button>
     </div>
@@ -111,6 +113,89 @@
     function addYearRangeRow() {
         const tmpl = document.getElementById("year-range-row-template");
         document.getElementById("year-range-rows").appendChild(tmpl.content.cloneNode(true));
+        scheduleCardCountRecalc();
+    }
+
+    // Live "how many cards would this pull in" estimate for the lobby-setup
+    // form. Debounced so typing a year doesn't fire a request per keystroke,
+    // and token-guarded so a slow response from an earlier recalc can't
+    // clobber the display after a newer one has already landed.
+    let cardCountRecalcTimeout = null;
+    let cardCountRecalcToken = 0;
+
+    function scheduleCardCountRecalc() {
+        if (cardCountRecalcTimeout) clearTimeout(cardCountRecalcTimeout);
+        cardCountRecalcTimeout = setTimeout(recalcCardCounts, 300);
+    }
+
+    function getSelectedDeckIds() {
+        return Array.from(document.querySelectorAll('input[name="deckId"]:checked')).map((el) => el.value);
+    }
+
+    function cardCountLabel(count) {
+        return `(${count} card${count === 1 ? "" : "s"})`;
+    }
+
+    async function fetchCardCount(params) {
+        const response = await fetch("/api/timeline-trivia/card-count", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: params.toString(),
+        });
+        if (!response.ok) return 0;
+        const count = parseInt(await response.text(), 10);
+        return Number.isNaN(count) ? 0 : count;
+    }
+
+    async function recalcCardCounts() {
+        const myToken = ++cardCountRecalcToken;
+        const deckIds = getSelectedDeckIds();
+        const totalEl = document.getElementById("deck-total-count");
+        const rows = Array.from(document.querySelectorAll(".year-range-row"));
+
+        if (deckIds.length === 0) {
+            if (totalEl) totalEl.textContent = "";
+            rows.forEach((row) => {
+                const countEl = row.querySelector(".year-range-count");
+                if (countEl) countEl.textContent = "";
+            });
+            return;
+        }
+
+        const completeRanges = rows
+            .map((row) => ({
+                from: row.querySelector('[name="fromYear"]').value,
+                to: row.querySelector('[name="toYear"]').value,
+            }))
+            .filter((r) => r.from !== "" && r.to !== "");
+
+        const totalParams = new URLSearchParams();
+        deckIds.forEach((id) => totalParams.append("deckId", id));
+        completeRanges.forEach((r) => {
+            totalParams.append("fromYear", r.from);
+            totalParams.append("toYear", r.to);
+        });
+        const total = await fetchCardCount(totalParams);
+        if (myToken !== cardCountRecalcToken) return;
+        if (totalEl) totalEl.textContent = cardCountLabel(total);
+
+        for (const row of rows) {
+            const countEl = row.querySelector(".year-range-count");
+            if (!countEl) continue;
+            const from = row.querySelector('[name="fromYear"]').value;
+            const to = row.querySelector('[name="toYear"]').value;
+            if (from === "" || to === "") {
+                countEl.textContent = "";
+                continue;
+            }
+            const params = new URLSearchParams();
+            deckIds.forEach((id) => params.append("deckId", id));
+            params.append("fromYear", from);
+            params.append("toYear", to);
+            const count = await fetchCardCount(params);
+            if (myToken !== cardCountRecalcToken) return;
+            countEl.textContent = cardCountLabel(count);
+        }
     }
 </script>
 

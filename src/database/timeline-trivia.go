@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	gsDatabase "github.com/gerp93/gameshell-framework/database"
@@ -277,6 +278,55 @@ func ApplyYearRangeFilter(gameId uuid.UUID) error {
 			)
 	`
 	return execute(sqlDelete, gameId, gameId)
+}
+
+// CountCardsInDecksForRanges counts how many cards across the given decks
+// would end up in the draw pile: those with a non-NULL year, further
+// restricted to the given ranges if any are provided (matching
+// ApplyYearRangeFilter's semantics — no ranges means every year is allowed).
+// Used for the live estimate shown while setting up a lobby.
+func CountCardsInDecksForRanges(deckIds []uuid.UUID, ranges []TimelineTriviaYearRange) (int, error) {
+	if len(deckIds) == 0 {
+		return 0, nil
+	}
+
+	deckPlaceholders := strings.TrimSuffix(strings.Repeat("?,", len(deckIds)), ",")
+
+	args := make([]interface{}, 0, len(deckIds)+2*len(ranges))
+	for _, id := range deckIds {
+		args = append(args, id)
+	}
+
+	sqlString := `
+		SELECT COUNT(*)
+		FROM CARD
+		WHERE DECK_ID IN (` + deckPlaceholders + `)
+			AND CARD_YEAR IS NOT NULL
+	`
+	if len(ranges) > 0 {
+		rangeClauses := make([]string, 0, len(ranges))
+		for _, r := range ranges {
+			rangeClauses = append(rangeClauses, "CARD_YEAR BETWEEN ? AND ?")
+			args = append(args, r.FromYear, r.ToYear)
+		}
+		sqlString += " AND (" + strings.Join(rangeClauses, " OR ") + ")"
+	}
+
+	rows, err := query(sqlString, args...)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var count int
+	for rows.Next() {
+		if err := rows.Scan(&count); err != nil {
+			log.Println(err)
+			return 0, errors.New("failed to scan row in query results")
+		}
+	}
+
+	return count, nil
 }
 
 // DrawTimelineTriviaCard draws a random card from the draw pile and sets it as current

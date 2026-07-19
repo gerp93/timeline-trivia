@@ -148,6 +148,7 @@ func main() {
 	http.Handle("GET /api/timeline-trivia/{lobbyId}/players", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetPlayers)))
 	http.Handle("GET /api/timeline-trivia/{lobbyId}/draw-pile-count", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetDrawPileCount)))
 	http.Handle("POST /api/timeline-trivia/search", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.Search)))
+	http.Handle("POST /api/timeline-trivia/card-count", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.CardCount)))
 
 	// access
 	http.Handle("POST /api/access/lobby/{lobbyId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiAccess.Lobby)))

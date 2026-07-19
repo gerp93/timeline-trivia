@@ -132,7 +132,7 @@ func SeedDefaultDeckIfEmpty(seedJSON []byte) error {
 		return errors.New("failed to parse default deck seed data")
 	}
 
-	deckId, err := gsDatabase.CreateDeck("History Trivia", "", true)
+	deckId, err := gsDatabase.CreateDeck("History Trivia - Default", "", true)
 	if err != nil {
 		return err
 	}
