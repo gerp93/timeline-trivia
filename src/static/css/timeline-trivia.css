@@ -285,6 +285,14 @@
     flex-shrink: 0;
 }
 
+.card-year-badge.bce {
+    /* "N B.C.E" runs noticeably wider than a plain 4-digit year, and this
+       badge sits in a fixed-height card box (--tt-card-h) it can't grow
+       past — shrink to keep it on one line instead of wrapping/clipping. */
+    font-size: 10px;
+    letter-spacing: -0.2px;
+}
+
 .card-event-text {
     font-size: 9px;
     line-height: 1.15;

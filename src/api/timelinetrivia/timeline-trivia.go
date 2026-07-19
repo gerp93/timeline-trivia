@@ -18,6 +18,15 @@ import (
 // TimelineTrivia deck ID
 var timelineTriviaDeckId = uuid.MustParse("88026803-d22a-11f0-b4d2-60cf84649547")
 
+// formatYear renders a card's year for display: negative (BCE) years show
+// as a positive number with a "B.C.E." suffix instead of a leading minus.
+func formatYear(year int) string {
+	if year < 0 {
+		return strconv.Itoa(-year) + " B.C.E"
+	}
+	return strconv.Itoa(year)
+}
+
 // ensureGameExists makes sure a TimelineTrivia game exists for a lobby, creating one if needed
 func ensureGameExists(lobbyId uuid.UUID) (database.TimelineTriviaGame, error) {
 	game, err := database.GetTimelineTriviaGame(lobbyId)
@@ -447,7 +456,8 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 	isMyTurn := game.CurrentPlayerId.Valid && game.CurrentPlayerId.UUID == player.Id
 
 	funcMap := template.FuncMap{
-		"add": func(a, b int) int { return a + b },
+		"add":        func(a, b int) int { return a + b },
+		"formatYear": formatYear,
 	}
 
 	tmpl, err := template.New("timeline.html").Funcs(funcMap).ParseFS(
