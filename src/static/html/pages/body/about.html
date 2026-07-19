@@ -5,9 +5,9 @@
 />
 <h1>About</h1>
 <p>
-    Card Judge is an
+    Timeline Trivia is an
     <a
-        href="https://github.com/GrantFBarnes/card-judge"
+        href="https://github.com/gerp93/timeline-trivia"
         target="_blank"
         rel="noopener noreferrer"
     >open source</a>
@@ -24,77 +24,47 @@
 </p>
 <details open>
     <summary class="summary-level-1">Definitions</summary>
-    <p>A <b>card</b> is text categorized as either a <i>Prompt</i> or <i>Response</i>.</p>
+    <p>A <b>card</b> is a historical event with a <b>year</b> it took place.</p>
     <p>A <b>deck</b> is a grouping of cards.</p>
     <p>A <b>lobby</b> is an active game taking place.</p>
     <p>A <b>draw pile</b> is the available cards within a lobby.</p>
+    <p>A <b>timeline</b> is a player's own row of correctly-placed cards, kept in chronological order.</p>
     <p>A <b>user</b> is an account created on this site.</p>
     <p>A <b>player</b> is a user in a lobby.</p>
-    <p>A <b>judge</b> is a role given to a single player within a lobby.</p>
 </details>
 <details open>
     <summary class="summary-level-1">Rules</summary>
     <details>
         <summary class="summary-level-2">Start Playing</summary>
         <p>
-            To start playing, create/join a lobby of at least three players (including yourself).
-            The player who created the lobby will start as the judge.
+            To start playing, create/join a lobby and select at least one deck.
+            A lobby can optionally be restricted to one or more year ranges,
+            limiting the draw pile to cards whose year falls within those ranges.
         </p>
     </details>
     <details>
-        <summary class="summary-level-2">Playing a Round</summary>
+        <summary class="summary-level-2">Playing a Turn</summary>
         <p>
-            The prompt card will be displayed in the middle of the game board for all
-            players to read.
+            The current event card is displayed for all players to read, with its
+            year hidden. On your turn, place it into your own timeline where you
+            believe it belongs relative to the events you've already placed.
         </p>
         <p>
-            All players (except the judge) answer the question or fill in the blanks
-            of the prompt card by selecting the amount of required response cards from
-            their hand. Players can withdraw their play as long not all other
-            players have played.
+            If the placement is correct, the card joins your timeline in its
+            proper chronological position. If it's incorrect, the card is
+            discarded and play moves to the next player.
         </p>
         <p>
-            The judge has the option to skip the current prompt card.
-            Any response cards already played will be returned to the players hand.
-        </p>
-        <p>
-            Once all players have played the required amount of cards, the
-            answers will be put in alphabetical order to ensure randomness.
-            The judge will be able to reveal each response one at a time.
-            The judge can rule-out any responses they do not like.
-        </p>
-        <p>
-            Once all cards are revealed the judge can select the winner.
-            The judge should choose the response that they believe
-            to be the best played response for the given prompt card.
-            A random option is provided if the judge cannot decide between
-            the remaining non-ruled-out responses.
-        </p>
-        <p>
-            The judge choosing a winner concludes that round.
-            The player who won is awarded a point on the scoreboard.
-            The judge rotates based on the order players joined the lobby.
-        </p>
-        <p>
-            Gameplay can continue until there are no more cards to draw from the draw
-            pile or when players agree to finish. The player with the most points is
-            the winner.
+            Play continues, drawing a new card each turn, until a player's
+            timeline reaches the number of cards required to win or the draw
+            pile is exhausted.
         </p>
     </details>
     <details>
-        <summary class="summary-level-2">Credits/Specials</summary>
+        <summary class="summary-level-2">Winning</summary>
         <p>
-            A lobby will have a set free credits for each player.
-            Credits can be used to purchase Specials at varying costs.
-            Specials vary from gambling credits to potentially earn more,
-            to playing Special Cards which are an alternative way to play a turn.
-            Each Special has a help icon next to it to display what it is.
-        </p>
-        <p>
-            Credits can be earned/lost through win/lose streaks.
-            The streak amount can be set per lobby.
-            This is to help balance and allow those who may be winning more
-            to lose credits, and allow those losing more to gain credits and catch up.
+            The first player to correctly place enough cards to reach the
+            lobby's configured "cards to win" wins the game.
         </p>
     </details>
 </details>
