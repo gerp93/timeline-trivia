@@ -19,6 +19,7 @@ import (
 	apiPages "github.com/gerp93/card-timeline/api/pages"
 	apiTimelineTrivia "github.com/gerp93/card-timeline/api/timelinetrivia"
 	apiUser "github.com/gerp93/card-timeline/api/user"
+	"github.com/gerp93/card-timeline/database"
 	"github.com/gerp93/card-timeline/game"
 	"github.com/gerp93/card-timeline/static"
 )
@@ -76,6 +77,18 @@ func main() {
 			log.Fatalln(err)
 			return
 		}
+	}
+
+	// Seed a default deck from the embedded starter data, but only if the
+	// database has no decks yet.
+	defaultDeckJSON, err := static.StaticFiles.ReadFile("data/default-deck.json")
+	if err != nil {
+		log.Fatalln(err)
+		return
+	}
+	if err := database.SeedDefaultDeckIfEmpty(defaultDeckJSON); err != nil {
+		log.Fatalln(err)
+		return
 	}
 
 	// static files (game's own, plus shared framework assets under /gs/)
