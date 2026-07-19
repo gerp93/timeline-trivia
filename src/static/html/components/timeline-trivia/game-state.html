@@ -4,13 +4,13 @@
         <p>Waiting for players to join...</p>
         <p>Players joined: {{len .Players}}</p>
         <button 
-            hx-post="/api/chronology/{{.LobbyId}}/start"
-            hx-target="#chronology-message"
+            hx-post="/api/timeline-trivia/{{.LobbyId}}/start"
+            hx-target="#timeline-trivia-message"
             hx-swap="innerHTML"
             onclick="console.log('Start Game clicked');">
             Start Game
         </button>
-        <div id="chronology-message"></div>
+        <div id="timeline-trivia-message"></div>
     </div>
     {{else if eq .Game.GameStatus "finished"}}
     <div class="game-finished">
@@ -30,7 +30,7 @@
         {{if .CurrentCard.CardId}}
         <div class="current-card-display">
             <h4>Current Event</h4>
-            <div class="chronology-card">
+            <div class="timeline-trivia-card">
                 <p class="card-text">{{.CurrentCard.CardText}}</p>
                 {{if .IsMyTurn}}
                 <p class="card-hint">(Year hidden - place it in your timeline!)</p>
@@ -50,7 +50,7 @@
             <p class="waiting-turn">Waiting for another player...</p>
             {{end}}
         </div>
-        <div id="chronology-message"></div>
+        <div id="timeline-trivia-message"></div>
     </div>
     {{end}}
 

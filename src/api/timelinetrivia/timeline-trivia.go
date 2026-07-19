@@ -1,4 +1,4 @@
-package apiChronology
+package apiTimelineTrivia
 
 import (
 	"fmt"
@@ -15,33 +15,30 @@ import (
 	"github.com/gerp93/card-timeline/static"
 )
 
-// Chronology deck ID
-var chronologyDeckId = uuid.MustParse("88026803-d22a-11f0-b4d2-60cf84649547")
+// TimelineTrivia deck ID
+var timelineTriviaDeckId = uuid.MustParse("88026803-d22a-11f0-b4d2-60cf84649547")
 
-// ensureGameExists makes sure a Chronology game exists for a lobby, creating one if needed
-func ensureGameExists(lobbyId uuid.UUID) (database.ChronologyGame, error) {
-	game, err := database.GetChronologyGame(lobbyId)
+// ensureGameExists makes sure a TimelineTrivia game exists for a lobby, creating one if needed
+func ensureGameExists(lobbyId uuid.UUID) (database.TimelineTriviaGame, error) {
+	game, err := database.GetTimelineTriviaGame(lobbyId)
 	if err == nil && game.Id != uuid.Nil {
 		return game, nil
 	}
 
 	// Auto-create the game with default settings
-	gameId, createErr := database.CreateChronologyGame(lobbyId, 5) // 5 cards to win default
+	gameId, createErr := database.CreateTimelineTriviaGame(lobbyId, 5) // 5 cards to win default
 	if createErr != nil {
 		return game, createErr
 	}
 
-	// Initialize draw pile with the Chronology deck
-	_ = database.InitializeChronologyDrawPile(gameId, []uuid.UUID{chronologyDeckId})
-
-	// Parse years from card text
-	_ = database.UpdateDrawPileYears(gameId)
+	// Initialize draw pile with the TimelineTrivia deck (cards use authored years)
+	_ = database.InitializeTimelineTriviaDrawPile(gameId, []uuid.UUID{timelineTriviaDeckId})
 
 	// Re-fetch the game
-	return database.GetChronologyGame(lobbyId)
+	return database.GetTimelineTriviaGame(lobbyId)
 }
 
-// Create creates a new Chronology lobby and game
+// Create creates a new TimelineTrivia lobby and game
 func Create(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
 	if err != nil {
@@ -66,16 +63,16 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create the lobby with game_type = 'chronology'
-	lobbyId, err := database.CreateChronologyLobby(name, password)
+	// Create the lobby with game_type = 'timeline-trivia'
+	lobbyId, err := database.CreateTimelineTriviaLobby(name, password)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to create lobby"))
 		return
 	}
 
-	// Create the Chronology game
-	gameId, err := database.CreateChronologyGame(lobbyId, cardsToWin)
+	// Create the TimelineTrivia game
+	gameId, err := database.CreateTimelineTriviaGame(lobbyId, cardsToWin)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to create game"))
@@ -97,26 +94,52 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Initialize draw pile with cards from decks
-	if err := database.InitializeChronologyDrawPile(gameId, deckIds); err != nil {
+	// Initialize draw pile with cards from decks (cards use authored years)
+	if err := database.InitializeTimelineTriviaDrawPile(gameId, deckIds); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to initialize draw pile"))
 		return
 	}
 
-	// Parse years from card text
-	if err := database.UpdateDrawPileYears(gameId); err != nil {
+	// Store any year-range filters (parallel fromYear/toYear form arrays) and
+	// prune the draw pile to cards within those ranges. No ranges = no filter.
+	fromYears := r.Form["fromYear"]
+	toYears := r.Form["toYear"]
+	for i := range fromYears {
+		if i >= len(toYears) {
+			break
+		}
+		if fromYears[i] == "" && toYears[i] == "" {
+			continue // empty row, ignore
+		}
+		from, fromErr := strconv.Atoi(fromYears[i])
+		to, toErr := strconv.Atoi(toYears[i])
+		if fromErr != nil || toErr != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("year ranges must be whole numbers"))
+			return
+		}
+		if from > to {
+			from, to = to, from // tolerate reversed input
+		}
+		if err := database.AddYearRange(gameId, from, to); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("failed to save year range"))
+			return
+		}
+	}
+	if err := database.ApplyYearRangeFilter(gameId); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to parse card years"))
+		_, _ = w.Write([]byte("failed to apply year range filter"))
 		return
 	}
 
 	// Redirect to the new lobby
-	w.Header().Set("HX-Redirect", fmt.Sprintf("/chronology/%s", lobbyId))
+	w.Header().Set("HX-Redirect", fmt.Sprintf("/timeline-trivia/%s", lobbyId))
 	w.WriteHeader(http.StatusOK)
 }
 
-// StartGame starts the Chronology game
+// StartGame starts the TimelineTrivia game
 func StartGame(w http.ResponseWriter, r *http.Request) {
 	lobbyIdString := r.PathValue("lobbyId")
 	lobbyId, err := uuid.Parse(lobbyIdString)
@@ -126,7 +149,7 @@ func StartGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	game, err := database.GetChronologyGame(lobbyId)
+	game, err := database.GetTimelineTriviaGame(lobbyId)
 	if err != nil || game.Id == uuid.Nil {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("game not found"))
@@ -139,7 +162,7 @@ func StartGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.StartChronologyGame(game.Id); err != nil {
+	if err := database.StartTimelineTriviaGame(game.Id); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to start game: " + err.Error()))
 		return
@@ -152,7 +175,7 @@ func StartGame(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("Game started!"))
 }
 
-// ResetGame resets a finished Chronology game to start a new one
+// ResetGame resets a finished TimelineTrivia game to start a new one
 func ResetGame(w http.ResponseWriter, r *http.Request) {
 	lobbyIdString := r.PathValue("lobbyId")
 	lobbyId, err := uuid.Parse(lobbyIdString)
@@ -162,7 +185,7 @@ func ResetGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	game, err := database.GetChronologyGame(lobbyId)
+	game, err := database.GetTimelineTriviaGame(lobbyId)
 	if err != nil || game.Id == uuid.Nil {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("game not found"))
@@ -175,7 +198,7 @@ func ResetGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.ResetChronologyGame(game.Id); err != nil {
+	if err := database.ResetTimelineTriviaGame(game.Id); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to reset game: " + err.Error()))
 		return
@@ -208,7 +231,7 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	game, err := database.GetChronologyGame(lobbyId)
+	game, err := database.GetTimelineTriviaGame(lobbyId)
 	if err != nil || game.Id == uuid.Nil {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("game not found"))
@@ -240,7 +263,7 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check for winner
-	winnerId, err := database.CheckChronologyWinner(game.Id)
+	winnerId, err := database.CheckTimelineTriviaWinner(game.Id)
 	if err == nil && winnerId != uuid.Nil {
 		// Game over!
 		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:You win!", player.Name))
@@ -251,14 +274,14 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Always advance to next player after each turn
-	if err := database.AdvanceChronologyTurn(game.Id); err != nil {
+	if err := database.AdvanceTimelineTriviaTurn(game.Id); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to advance turn"))
 		return
 	}
 
 	// Draw new card for next player
-	if err := database.DrawChronologyCard(game.Id); err != nil {
+	if err := database.DrawTimelineTriviaCard(game.Id); err != nil {
 		// No more cards - game over
 		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
@@ -295,7 +318,7 @@ func GetGameState(w http.ResponseWriter, r *http.Request) {
 
 	userId := gsApi.GetUserId(r)
 
-	game, err := database.GetChronologyGame(lobbyId)
+	game, err := database.GetTimelineTriviaGame(lobbyId)
 	if err != nil || game.Id == uuid.Nil {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("game not found"))
@@ -311,26 +334,26 @@ func GetGameState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get current card
-	currentCard, _ := database.GetChronologyCurrentCard(game.Id)
+	currentCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
 
 	// Get all players with their timeline sizes
-	players, _ := database.GetChronologyPlayers(game.Id)
+	players, _ := database.GetTimelineTriviaPlayers(game.Id)
 
 	// Get this player's timeline
-	var timeline []database.ChronologyTimelineCard
+	var timeline []database.TimelineTriviaTimelineCard
 	if player.Id != uuid.Nil {
 		timeline, _ = database.GetPlayerTimeline(game.Id, player.Id)
 	}
 
 	// Get draw pile count
-	drawPileCount, _ := database.GetChronologyDrawPileCount(game.Id)
+	drawPileCount, _ := database.GetTimelineTriviaDrawPileCount(game.Id)
 
 	// Is it this player's turn?
 	isMyTurn := game.CurrentPlayerId.Valid && player.Id != uuid.Nil && game.CurrentPlayerId.UUID == player.Id
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
-		"html/components/chronology/game-state.html",
+		"html/components/timeline-trivia/game-state.html",
 	)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -339,10 +362,10 @@ func GetGameState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		Game          database.ChronologyGame
-		CurrentCard   database.ChronologyCurrentCard
-		Players       []database.ChronologyPlayer
-		Timeline      []database.ChronologyTimelineCard
+		Game          database.TimelineTriviaGame
+		CurrentCard   database.TimelineTriviaCurrentCard
+		Players       []database.TimelineTriviaPlayer
+		Timeline      []database.TimelineTriviaTimelineCard
 		DrawPileCount int
 		IsMyTurn      bool
 		PlayerId      uuid.UUID
@@ -413,7 +436,7 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 
 	tmpl, err := template.New("timeline.html").Funcs(funcMap).ParseFS(
 		static.StaticFiles,
-		"html/components/chronology/timeline.html",
+		"html/components/timeline-trivia/timeline.html",
 	)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -422,7 +445,7 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		AllTimelines []database.ChronologyPlayerTimeline
+		AllTimelines []database.TimelineTriviaPlayerTimeline
 		IsMyTurn     bool
 		GameStatus   string
 		LobbyId      uuid.UUID
@@ -453,11 +476,11 @@ func GetCurrentCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	currentCard, _ := database.GetChronologyCurrentCard(game.Id)
+	currentCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
-		"html/components/chronology/current-card.html",
+		"html/components/timeline-trivia/current-card.html",
 	)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -485,7 +508,7 @@ func GetDrawPileCount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	count, err := database.GetChronologyDrawPileCount(game.Id)
+	count, err := database.GetTimelineTriviaDrawPileCount(game.Id)
 	if err != nil {
 		_, _ = w.Write([]byte("0"))
 		return
@@ -511,7 +534,7 @@ func GetPlayers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	players, err := database.GetChronologyPlayers(game.Id)
+	players, err := database.GetTimelineTriviaPlayers(game.Id)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to get players"))
@@ -520,7 +543,7 @@ func GetPlayers(w http.ResponseWriter, r *http.Request) {
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
-		"html/components/chronology/players.html",
+		"html/components/timeline-trivia/players.html",
 	)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -529,7 +552,7 @@ func GetPlayers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		Players         []database.ChronologyPlayer
+		Players         []database.TimelineTriviaPlayer
 		CurrentPlayerId uuid.UUID
 		CardsToWin      int
 	}
@@ -557,14 +580,14 @@ func Search(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	lobbies, err := database.SearchChronologyLobbies(name, page)
+	lobbies, err := database.SearchTimelineTriviaLobbies(name, page)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to search lobbies"))
 		return
 	}
 
-	count, err := database.CountChronologyLobbies(name)
+	count, err := database.CountTimelineTriviaLobbies(name)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to count lobbies"))
@@ -573,7 +596,7 @@ func Search(w http.ResponseWriter, r *http.Request) {
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
-		"html/components/table-rows/chronology-lobby-rows.html",
+		"html/components/table-rows/timeline-trivia-lobby-rows.html",
 	)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -582,7 +605,7 @@ func Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		Lobbies     []database.ChronologyLobbyDetails
+		Lobbies     []database.TimelineTriviaLobbyDetails
 		TotalCount  int
 		CurrentPage int
 		PageSize    int

@@ -1,13 +1,16 @@
 package game
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
 
-// CardTimeline implements gameshell.Game — Chronology's room/player
-// lifecycle hooks. The game creates/reads its own state lazily from the
-// API layer (see api/chronology), so these hooks are no-ops: CHRONOLOGY_GAME
-// rows are created on first access, and CHRONOLOGY_GAME cascades away
-// automatically when the framework deletes its LOBBY row (FK ON DELETE
-// CASCADE).
+	"github.com/gerp93/card-timeline/database"
+)
+
+// CardTimeline implements gameshell.Game — TimelineTrivia's lifecycle hooks.
+// Room/player state is created lazily from the API layer (see api/timelinetrivia)
+// and cascades away when the framework deletes a LOBBY, so those hooks are
+// no-ops. OnDeckDeleting audits the deck's cards before the framework removes
+// the DECK (FK cascade would not fire the card audit trigger).
 type CardTimeline struct{}
 
 func (CardTimeline) OnRoomCreated(lobbyId uuid.UUID) error     { return nil }
@@ -15,3 +18,7 @@ func (CardTimeline) OnPlayerJoined(playerId uuid.UUID) error   { return nil }
 func (CardTimeline) OnPlayerActive(playerId uuid.UUID) error   { return nil }
 func (CardTimeline) OnPlayerInactive(playerId uuid.UUID) error { return nil }
 func (CardTimeline) OnRoomEmpty(lobbyId uuid.UUID) error       { return nil }
+
+func (CardTimeline) OnDeckDeleting(deckId uuid.UUID) error {
+	return database.AuditDeckCardsAsDeleted(deckId)
+}

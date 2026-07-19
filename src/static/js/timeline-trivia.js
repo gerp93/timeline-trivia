@@ -1,48 +1,41 @@
-// Chronology Game JavaScript
+// TimelineTrivia Game JavaScript
 
-let chronologyConn = null;
+let timelineTriviaConn = null;
 
-function initChronologyWebSocket(lobbyId, playerId) {
+function initTimelineTriviaWebSocket(lobbyId, playerId) {
     let wsProtocol = "wss://";
     if (document.location.protocol === "http:") {
         wsProtocol = "ws://";
     }
 
-    chronologyConn = new WebSocket(wsProtocol + document.location.host + "/ws/lobby/" + lobbyId);
+    timelineTriviaConn = new WebSocket(wsProtocol + document.location.host + "/ws/lobby/" + lobbyId);
 
-    if (!chronologyConn) {
+    if (!timelineTriviaConn) {
         alert("Failed to make connection.");
-        document.location.href = "/chronology/lobbies";
+        document.location.href = "/timeline-trivia/lobbies";
         return;
     }
 
-    chronologyConn.onclose = () => {
+    timelineTriviaConn.onclose = () => {
         alert("Connection Lost");
-        document.location.href = "/chronology/lobbies";
+        document.location.href = "/timeline-trivia/lobbies";
     };
 
     // Chat form handling
-    const chatForm = document.getElementById("chronology-chat-form");
-    const chatMessages = document.getElementById("chronology-chat-messages");
-    const chatInput = document.getElementById("chronology-chat-input");
+    const chatForm = document.getElementById("timeline-trivia-chat-form");
+    const chatMessages = document.getElementById("timeline-trivia-chat-messages");
+    const chatInput = document.getElementById("timeline-trivia-chat-input");
 
-    if (chatForm) {
-        chatForm.onsubmit = (event) => {
-            event.preventDefault();
-            if (!chatInput.value) return;
-            chronologyConn.send(chatInput.value);
-            chatInput.value = "";
-        };
-    }
+    gsChat.wireForm(chatForm, chatInput, timelineTriviaConn);
 
-    chronologyConn.onmessage = (event) => {
+    timelineTriviaConn.onmessage = (event) => {
         let messageText = event.data;
-        console.log("[Chronology WS] Received:", messageText);
+        console.log("[TimelineTrivia WS] Received:", messageText);
 
         switch (messageText) {
             case "refresh":
                 // Refresh all game components
-                console.log("[Chronology WS] Refreshing game state...");
+                console.log("[TimelineTrivia WS] Refreshing game state...");
                 refreshGameState(lobbyId);
                 return;
 
@@ -52,7 +45,7 @@ function initChronologyWebSocket(lobbyId, playerId) {
                 // websocket connection; if this player is the only client,
                 // the server deletes the (now empty) lobby before the reload
                 // can finish, destroying the game that was just started.
-                console.log("[Chronology WS] Refreshing game in 500ms...");
+                console.log("[TimelineTrivia WS] Refreshing game in 500ms...");
                 setTimeout(() => {
                     refreshGameState(lobbyId);
                     refreshControls(lobbyId);
@@ -60,7 +53,7 @@ function initChronologyWebSocket(lobbyId, playerId) {
                 return;
 
             case "kick":
-                document.location.href = "/chronology/lobbies";
+                document.location.href = "/timeline-trivia/lobbies";
                 return;
         }
 
@@ -95,39 +88,39 @@ function initChronologyWebSocket(lobbyId, playerId) {
 }
 
 function refreshGameState(lobbyId) {
-    console.log("[Chronology] refreshGameState called with lobbyId:", lobbyId);
+    console.log("[TimelineTrivia] refreshGameState called with lobbyId:", lobbyId);
     
     // Refresh current card
-    htmx.ajax("GET", "/api/chronology/" + lobbyId + "/current-card", {
+    htmx.ajax("GET", "/api/timeline-trivia/" + lobbyId + "/current-card", {
         target: "#current-card-content",
         swap: "innerHTML"
-    }).then(() => console.log("[Chronology] current-card refreshed"));
+    }).then(() => console.log("[TimelineTrivia] current-card refreshed"));
 
     // Refresh timeline using fetch directly
-    const timelineTarget = document.getElementById("chronology-timeline");
-    console.log("[Chronology] Timeline target element:", timelineTarget);
-    const timelineUrl = "/api/chronology/" + lobbyId + "/timeline?t=" + Date.now();
-    console.log("[Chronology] Fetching timeline from:", timelineUrl);
+    const timelineTarget = document.getElementById("timeline-trivia-timeline");
+    console.log("[TimelineTrivia] Timeline target element:", timelineTarget);
+    const timelineUrl = "/api/timeline-trivia/" + lobbyId + "/timeline?t=" + Date.now();
+    console.log("[TimelineTrivia] Fetching timeline from:", timelineUrl);
     fetch(timelineUrl, { cache: 'no-store' })
         .then(response => response.text())
         .then(html => {
-            console.log("[Chronology] Got timeline HTML, length:", html.length);
+            console.log("[TimelineTrivia] Got timeline HTML, length:", html.length);
             if (timelineTarget) {
                 timelineTarget.innerHTML = html;
                 htmx.process(timelineTarget); // Process HTMX attributes in new content
             }
-            console.log("[Chronology] timeline refreshed");
+            console.log("[TimelineTrivia] timeline refreshed");
         })
-        .catch(e => console.error("[Chronology] timeline error:", e));
+        .catch(e => console.error("[TimelineTrivia] timeline error:", e));
 
     // Refresh players list
-    htmx.ajax("GET", "/api/chronology/" + lobbyId + "/players", {
+    htmx.ajax("GET", "/api/timeline-trivia/" + lobbyId + "/players", {
         target: "#players-inline",
         swap: "innerHTML"
-    }).then(() => console.log("[Chronology] players refreshed"));
+    }).then(() => console.log("[TimelineTrivia] players refreshed"));
 
     // Refresh draw pile count
-    fetch("/api/chronology/" + lobbyId + "/draw-pile-count", { cache: 'no-store' })
+    fetch("/api/timeline-trivia/" + lobbyId + "/draw-pile-count", { cache: 'no-store' })
         .then(response => response.text())
         .then(count => {
             const el = document.getElementById("draw-pile-count");
@@ -135,41 +128,36 @@ function refreshGameState(lobbyId) {
                 el.innerHTML = "Remaining: <strong>" + count + "</strong>";
             }
         })
-        .catch(e => console.error("[Chronology] draw-pile-count error:", e));
+        .catch(e => console.error("[TimelineTrivia] draw-pile-count error:", e));
 }
 
 function refreshControls(lobbyId) {
-    // Re-fetches the current page and swaps in just the #chronology-controls
+    // Re-fetches the current page and swaps in just the #timeline-trivia-controls
     // block (Start/Reset button, waiting/winner text) so a game-status change
     // is reflected without a full page navigation.
     fetch(location.pathname, { cache: "no-store" })
         .then(response => response.text())
         .then(html => {
             const doc = new DOMParser().parseFromString(html, "text/html");
-            const newControls = doc.getElementById("chronology-controls");
-            const currentControls = document.getElementById("chronology-controls");
+            const newControls = doc.getElementById("timeline-trivia-controls");
+            const currentControls = document.getElementById("timeline-trivia-controls");
             if (newControls && currentControls) {
                 currentControls.outerHTML = newControls.outerHTML;
-                htmx.process(document.getElementById("chronology-controls"));
+                htmx.process(document.getElementById("timeline-trivia-controls"));
             }
         })
-        .catch(e => console.error("[Chronology] controls refresh error:", e));
+        .catch(e => console.error("[TimelineTrivia] controls refresh error:", e));
 }
 
 function addChatMessage(message) {
-    const chatMessages = document.getElementById("chronology-chat-messages");
-    if (!chatMessages) return;
-
-    const messageDiv = document.createElement("div");
-    messageDiv.className = "chat-message";
-    messageDiv.textContent = message;
-    chatMessages.appendChild(messageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    // Shared renderer: parses <blue>/<green>/<red>/</> color tokens, timestamps,
+    // and trims history (see gameshell-framework /gs/js/chat.js).
+    gsChat.append(document.getElementById("timeline-trivia-chat-messages"), message);
 }
 
 function showAlert(message) {
     // Could use a modal or toast notification
-    const messageDiv = document.getElementById("chronology-message");
+    const messageDiv = document.getElementById("timeline-trivia-message");
     if (messageDiv) {
         messageDiv.textContent = message;
         messageDiv.className = "alert-message";
@@ -181,16 +169,16 @@ function showAlert(message) {
 
 function showResultPopup(playerName, resultType, message) {
     // Remove any existing popup
-    const existing = document.querySelector(".chronology-popup-backdrop");
+    const existing = document.querySelector(".timeline-trivia-popup-backdrop");
     if (existing) existing.remove();
 
     // Create backdrop
     const backdrop = document.createElement("div");
-    backdrop.className = "chronology-popup-backdrop";
+    backdrop.className = "timeline-trivia-popup-backdrop";
 
     // Create popup
     const popup = document.createElement("div");
-    popup.className = "chronology-popup " + resultType;
+    popup.className = "timeline-trivia-popup " + resultType;
 
     const icon = resultType === "correct" ? "✓" : "✗";
     const title = resultType === "correct" ? "CORRECT!" : "WRONG!";

@@ -8,14 +8,16 @@ import (
 
 	gameshell "github.com/gerp93/gameshell-framework"
 	gsApi "github.com/gerp93/gameshell-framework/api"
+	gsApiDeck "github.com/gerp93/gameshell-framework/api/deck"
 	gsAuth "github.com/gerp93/gameshell-framework/auth"
 	gsDatabase "github.com/gerp93/gameshell-framework/database"
 	gsStatic "github.com/gerp93/gameshell-framework/static"
 	gsWebsocket "github.com/gerp93/gameshell-framework/websocket"
 
 	apiAccess "github.com/gerp93/card-timeline/api/access"
-	apiChronology "github.com/gerp93/card-timeline/api/chronology"
+	apiCard "github.com/gerp93/card-timeline/api/card"
 	apiPages "github.com/gerp93/card-timeline/api/pages"
+	apiTimelineTrivia "github.com/gerp93/card-timeline/api/timelinetrivia"
 	apiUser "github.com/gerp93/card-timeline/api/user"
 	"github.com/gerp93/card-timeline/game"
 	"github.com/gerp93/card-timeline/static"
@@ -29,13 +31,13 @@ func main() {
 	}()
 
 	gameshell.Register(game.CardTimeline{})
-	gsApi.SetBrandName("Card Timeline")
+	gsApi.SetBrandName("Timeline Trivia")
 	gsAuth.SetCookiePrefix("CARD-TIMELINE")
 	gsApi.SetPagePolicy(gsApi.PagePolicy{
 		LoginPaths: []string{"/account", "/users"},
 		LoginPathPrefixes: []string{
 			"/deck/",
-			"/chronology/",
+			"/timeline-trivia/",
 		},
 		AdminPaths: []string{"/users"},
 	})
@@ -76,8 +78,9 @@ func main() {
 		}
 	}
 
-	// static files
+	// static files (game's own, plus shared framework assets under /gs/)
 	http.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static.StaticFiles))))
+	http.Handle("GET /gs/", http.StripPrefix("/gs/", http.FileServer(http.FS(gsStatic.StaticFiles))))
 
 	// pages
 	http.Handle("GET /", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Home)))
@@ -89,10 +92,10 @@ func main() {
 	http.Handle("GET /deck/{deckId}", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Deck)))
 	http.Handle("GET /deck/{deckId}/access", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.DeckAccess)))
 
-	// chronology pages
-	http.Handle("GET /chronology/lobbies", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.ChronologyLobbies)))
-	http.Handle("GET /chronology/{lobbyId}", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.ChronologyLobby)))
-	http.Handle("GET /chronology/{lobbyId}/access", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.ChronologyLobbyAccess)))
+	// timeline-trivia pages
+	http.Handle("GET /timeline-trivia/lobbies", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.TimelineTriviaLobbies)))
+	http.Handle("GET /timeline-trivia/{lobbyId}", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.TimelineTriviaLobby)))
+	http.Handle("GET /timeline-trivia/{lobbyId}/access", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.TimelineTriviaLobbyAccess)))
 
 	// user
 	http.Handle("POST /api/user/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.Create)))
@@ -107,17 +110,30 @@ func main() {
 	http.Handle("PUT /api/user/{userId}/is-admin", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.SetIsAdmin)))
 	http.Handle("DELETE /api/user/{userId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.Delete)))
 
-	// chronology
-	http.Handle("POST /api/chronology/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiChronology.Create)))
-	http.Handle("POST /api/chronology/{lobbyId}/start", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiChronology.StartGame)))
-	http.Handle("POST /api/chronology/{lobbyId}/reset", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiChronology.ResetGame)))
-	http.Handle("POST /api/chronology/{lobbyId}/place-card", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiChronology.PlaceCard)))
-	http.Handle("GET /api/chronology/{lobbyId}/state", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiChronology.GetGameState)))
-	http.Handle("GET /api/chronology/{lobbyId}/timeline", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiChronology.GetTimeline)))
-	http.Handle("GET /api/chronology/{lobbyId}/current-card", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiChronology.GetCurrentCard)))
-	http.Handle("GET /api/chronology/{lobbyId}/players", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiChronology.GetPlayers)))
-	http.Handle("GET /api/chronology/{lobbyId}/draw-pile-count", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiChronology.GetDrawPileCount)))
-	http.Handle("POST /api/chronology/search", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiChronology.Search)))
+	// deck (framework-owned deck management)
+	http.Handle("POST /api/deck/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiDeck.Create)))
+	http.Handle("PUT /api/deck/{deckId}/name", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiDeck.SetName)))
+	http.Handle("PUT /api/deck/{deckId}/password", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiDeck.SetPassword)))
+	http.Handle("PUT /api/deck/{deckId}/is-public-read-only", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiDeck.SetIsPublicReadOnly)))
+	http.Handle("DELETE /api/deck/{deckId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiDeck.Delete)))
+
+	// card (game-owned; text + year)
+	http.Handle("GET /api/deck/{deckId}/card-export", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.GetCardExport)))
+	http.Handle("POST /api/card/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Create)))
+	http.Handle("PUT /api/card/{cardId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Update)))
+	http.Handle("DELETE /api/card/{cardId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Delete)))
+
+	// timeline-trivia
+	http.Handle("POST /api/timeline-trivia/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.Create)))
+	http.Handle("POST /api/timeline-trivia/{lobbyId}/start", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.StartGame)))
+	http.Handle("POST /api/timeline-trivia/{lobbyId}/reset", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.ResetGame)))
+	http.Handle("POST /api/timeline-trivia/{lobbyId}/place-card", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.PlaceCard)))
+	http.Handle("GET /api/timeline-trivia/{lobbyId}/state", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetGameState)))
+	http.Handle("GET /api/timeline-trivia/{lobbyId}/timeline", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetTimeline)))
+	http.Handle("GET /api/timeline-trivia/{lobbyId}/current-card", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetCurrentCard)))
+	http.Handle("GET /api/timeline-trivia/{lobbyId}/players", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetPlayers)))
+	http.Handle("GET /api/timeline-trivia/{lobbyId}/draw-pile-count", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetDrawPileCount)))
+	http.Handle("POST /api/timeline-trivia/search", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.Search)))
 
 	// access
 	http.Handle("POST /api/access/lobby/{lobbyId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiAccess.Lobby)))

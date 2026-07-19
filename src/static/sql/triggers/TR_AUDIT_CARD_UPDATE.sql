@@ -7,18 +7,14 @@ BEGIN
         AUDIT_TYPE,
         CARD_ID,
         DECK_ID,
-        CATEGORY,
         TEXT,
-        YOUTUBE,
-        IMAGE
+        CARD_YEAR
     )
     VALUES (
         'UPDATE',
         OLD.ID,
         OLD.DECK_ID,
-        OLD.CATEGORY,
         OLD.TEXT,
-        OLD.YOUTUBE,
-        OLD.IMAGE
+        OLD.CARD_YEAR
     );
 END;

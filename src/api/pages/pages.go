@@ -17,7 +17,7 @@ import (
 
 func Home(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - Home"
+	basePageData.PageTitle = "Timeline Trivia - Home"
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
@@ -35,7 +35,7 @@ func Home(w http.ResponseWriter, r *http.Request) {
 
 func About(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - About"
+	basePageData.PageTitle = "Timeline Trivia - About"
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
@@ -53,7 +53,7 @@ func About(w http.ResponseWriter, r *http.Request) {
 
 func Login(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - Login"
+	basePageData.PageTitle = "Timeline Trivia - Login"
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
@@ -71,7 +71,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 func Account(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - Account"
+	basePageData.PageTitle = "Timeline Trivia - Account"
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
@@ -89,7 +89,7 @@ func Account(w http.ResponseWriter, r *http.Request) {
 
 func Users(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - Users"
+	basePageData.PageTitle = "Timeline Trivia - Users"
 
 	var name string
 	var page int
@@ -156,7 +156,7 @@ func Users(w http.ResponseWriter, r *http.Request) {
 
 func Decks(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - Decks"
+	basePageData.PageTitle = "Timeline Trivia - Decks"
 
 	var name string
 	var page int
@@ -170,7 +170,7 @@ func Decks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	totalRowCount, err := database.CountDecks(name)
+	totalRowCount, err := gsDatabase.CountDecks(name)
 	if err != nil {
 		totalRowCount = 0
 	}
@@ -184,7 +184,7 @@ func Decks(w http.ResponseWriter, r *http.Request) {
 		page = totalPageCount
 	}
 
-	decks, err := database.SearchDecks(name, page)
+	decks, err := gsDatabase.SearchDecks(name, page)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to get table rows"))
@@ -208,7 +208,7 @@ func Decks(w http.ResponseWriter, r *http.Request) {
 		Page     int
 		LastPage int
 		RowCount int
-		Decks    []database.DeckDetails
+		Decks    []gsDatabase.DeckDetails
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
@@ -229,7 +229,7 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deck, err := database.GetDeck(deckId)
+	deck, err := gsDatabase.GetDeck(deckId)
 	if err != nil {
 		http.Redirect(w, r, "/decks", http.StatusSeeOther)
 		return
@@ -241,9 +241,9 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - Deck"
+	basePageData.PageTitle = "Timeline Trivia - Deck"
 
-	hasDeckAccess, err := database.UserHasDeckAccess(basePageData.User.Id, deckId)
+	hasDeckAccess, err := gsDatabase.UserHasDeckAccess(basePageData.User.Id, deckId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to check deck access"))
@@ -255,14 +255,11 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var category string
 	var text string
 	var page int
 	params := r.URL.Query()
 	for key, val := range params {
 		switch key {
-		case "category":
-			category = val[0]
 		case "text":
 			text = val[0]
 		case "page":
@@ -270,7 +267,7 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	totalRowCount, err := database.CountCardsInDeck(deckId, category, text)
+	totalRowCount, err := database.CountCardsInDeck(deckId, text)
 	if err != nil {
 		totalRowCount = 0
 	}
@@ -284,7 +281,7 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 		page = totalPageCount
 	}
 
-	cards, err := database.SearchCardsInDeck(deckId, category, text, page)
+	cards, err := database.SearchCardsInDeck(deckId, text, page)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to get table rows"))
@@ -304,8 +301,7 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		Deck     database.Deck
-		Category string
+		Deck     gsDatabase.Deck
 		Text     string
 		Page     int
 		LastPage int
@@ -316,7 +312,6 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 	_ = tmpl.ExecuteTemplate(w, "base", data{
 		BasePageData: basePageData,
 		Deck:         deck,
-		Category:     category,
 		Text:         text,
 		Page:         page,
 		LastPage:     totalPageCount,
@@ -333,7 +328,7 @@ func DeckAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deck, err := database.GetDeck(deckId)
+	deck, err := gsDatabase.GetDeck(deckId)
 	if err != nil {
 		http.Redirect(w, r, "/decks", http.StatusSeeOther)
 		return
@@ -345,9 +340,9 @@ func DeckAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - Deck"
+	basePageData.PageTitle = "Timeline Trivia - Deck"
 
-	hasDeckAccess, err := database.UserHasDeckAccess(basePageData.User.Id, deckId)
+	hasDeckAccess, err := gsDatabase.UserHasDeckAccess(basePageData.User.Id, deckId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to check deck access"))
@@ -372,7 +367,7 @@ func DeckAccess(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		Deck database.Deck
+		Deck gsDatabase.Deck
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
@@ -381,21 +376,21 @@ func DeckAccess(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ChronologyLobbies displays the list of Chronology games
-func ChronologyLobbies(w http.ResponseWriter, r *http.Request) {
+// TimelineTriviaLobbies displays the list of TimelineTrivia games
+func TimelineTriviaLobbies(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - Games"
+	basePageData.PageTitle = "Timeline Trivia - Games"
 
 	// Get readable decks for the current user
-	decks, err := database.GetReadableDecks(basePageData.User.Id)
+	decks, err := gsDatabase.GetReadableDecks(basePageData.User.Id)
 	if err != nil {
-		decks = make([]database.Deck, 0)
+		decks = make([]gsDatabase.Deck, 0)
 	}
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
 		"html/pages/base.html",
-		"html/pages/body/chronology-lobbies.html",
+		"html/pages/body/timeline-trivia-lobbies.html",
 	)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -405,7 +400,7 @@ func ChronologyLobbies(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		Decks []database.Deck
+		Decks []gsDatabase.Deck
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
@@ -414,28 +409,28 @@ func ChronologyLobbies(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ChronologyLobby displays a specific Chronology game
-func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
+// TimelineTriviaLobby displays a specific TimelineTrivia game
+func TimelineTriviaLobby(w http.ResponseWriter, r *http.Request) {
 	lobbyIdString := r.PathValue("lobbyId")
 	lobbyId, err := uuid.Parse(lobbyIdString)
 	if err != nil {
-		http.Redirect(w, r, "/chronology/lobbies", http.StatusSeeOther)
+		http.Redirect(w, r, "/timeline-trivia/lobbies", http.StatusSeeOther)
 		return
 	}
 
 	lobby, err := database.GetLobby(lobbyId)
 	if err != nil {
-		http.Redirect(w, r, "/chronology/lobbies", http.StatusSeeOther)
+		http.Redirect(w, r, "/timeline-trivia/lobbies", http.StatusSeeOther)
 		return
 	}
 
 	if lobby.Id == uuid.Nil {
-		http.Redirect(w, r, "/chronology/lobbies", http.StatusSeeOther)
+		http.Redirect(w, r, "/timeline-trivia/lobbies", http.StatusSeeOther)
 		return
 	}
 
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - Game"
+	basePageData.PageTitle = "Timeline Trivia - Game"
 
 	hasLobbyAccess, err := gsDatabase.UserHasLobbyAccess(basePageData.User.Id, lobbyId)
 	if err != nil {
@@ -445,7 +440,7 @@ func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !hasLobbyAccess {
-		http.Redirect(w, r, fmt.Sprintf("/chronology/%s/access", lobbyId), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/timeline-trivia/%s/access", lobbyId), http.StatusSeeOther)
 		return
 	}
 
@@ -457,34 +452,30 @@ func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the Chronology game - auto-create if it doesn't exist
-	game, err := database.GetChronologyGame(lobbyId)
+	// Get the TimelineTrivia game - auto-create if it doesn't exist
+	game, err := database.GetTimelineTriviaGame(lobbyId)
 	if err != nil || game.Id == uuid.Nil {
-		log.Printf("[INFO ChronologyLobby] Game not found for lobby %s, auto-creating...", lobbyId)
+		log.Printf("[INFO TimelineTriviaLobby] Game not found for lobby %s, auto-creating...", lobbyId)
 		// Auto-create the game with default settings
-		gameId, createErr := database.CreateChronologyGame(lobbyId, 5) // 5 cards to win default
+		gameId, createErr := database.CreateTimelineTriviaGame(lobbyId, 5) // 5 cards to win default
 		if createErr != nil {
-			log.Printf("[ERROR ChronologyLobby] Failed to auto-create game for lobby %s: %v", lobbyId, createErr)
-			http.Redirect(w, r, "/chronology/lobbies", http.StatusSeeOther)
+			log.Printf("[ERROR TimelineTriviaLobby] Failed to auto-create game for lobby %s: %v", lobbyId, createErr)
+			http.Redirect(w, r, "/timeline-trivia/lobbies", http.StatusSeeOther)
 			return
 		}
-		// Initialize draw pile with the Chronology deck
-		chronologyDeckId, _ := uuid.Parse("88026803-d22a-11f0-b4d2-60cf84649547")
-		if initErr := database.InitializeChronologyDrawPile(gameId, []uuid.UUID{chronologyDeckId}); initErr != nil {
-			log.Printf("[ERROR ChronologyLobby] Failed to initialize draw pile for lobby %s: %v", lobbyId, initErr)
-		}
-		// Parse years from card text
-		if yearErr := database.UpdateDrawPileYears(gameId); yearErr != nil {
-			log.Printf("[ERROR ChronologyLobby] Failed to update draw pile years for lobby %s: %v", lobbyId, yearErr)
+		// Initialize draw pile with the TimelineTrivia deck (cards use authored years)
+		timelineTriviaDeckId, _ := uuid.Parse("88026803-d22a-11f0-b4d2-60cf84649547")
+		if initErr := database.InitializeTimelineTriviaDrawPile(gameId, []uuid.UUID{timelineTriviaDeckId}); initErr != nil {
+			log.Printf("[ERROR TimelineTriviaLobby] Failed to initialize draw pile for lobby %s: %v", lobbyId, initErr)
 		}
 		// Re-fetch the game
-		game, err = database.GetChronologyGame(lobbyId)
+		game, err = database.GetTimelineTriviaGame(lobbyId)
 		if err != nil || game.Id == uuid.Nil {
-			log.Printf("[ERROR ChronologyLobby] Still no game after auto-create for lobby %s", lobbyId)
-			http.Redirect(w, r, "/chronology/lobbies", http.StatusSeeOther)
+			log.Printf("[ERROR TimelineTriviaLobby] Still no game after auto-create for lobby %s", lobbyId)
+			http.Redirect(w, r, "/timeline-trivia/lobbies", http.StatusSeeOther)
 			return
 		}
-		log.Printf("[INFO ChronologyLobby] Auto-created game %s for lobby %s", game.Id, lobbyId)
+		log.Printf("[INFO TimelineTriviaLobby] Auto-created game %s for lobby %s", game.Id, lobbyId)
 	}
 
 	// Get current player name if game is active
@@ -503,10 +494,15 @@ func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
 		winnerName = user.Name
 	}
 
+	yearRanges, err := database.GetYearRanges(game.Id)
+	if err != nil {
+		log.Printf("[ERROR TimelineTriviaLobby] Failed to get year ranges for game %s: %v", game.Id, err)
+	}
+
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
 		"html/pages/base.html",
-		"html/pages/body/chronology.html",
+		"html/pages/body/timeline-trivia.html",
 	)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -517,11 +513,12 @@ func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
 	type data struct {
 		gsApi.BasePageData
 		Lobby             database.Lobby
-		Game              database.ChronologyGame
+		Game              database.TimelineTriviaGame
 		PlayerId          uuid.UUID
 		CurrentPlayerName string
 		IsMyTurn          bool
 		WinnerName        string
+		YearRanges        []database.TimelineTriviaYearRange
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
@@ -532,31 +529,32 @@ func ChronologyLobby(w http.ResponseWriter, r *http.Request) {
 		CurrentPlayerName: currentPlayerName,
 		IsMyTurn:          isMyTurn,
 		WinnerName:        winnerName,
+		YearRanges:        yearRanges,
 	})
 }
 
-// ChronologyLobbyAccess displays the access page for a Chronology game
-func ChronologyLobbyAccess(w http.ResponseWriter, r *http.Request) {
+// TimelineTriviaLobbyAccess displays the access page for a TimelineTrivia game
+func TimelineTriviaLobbyAccess(w http.ResponseWriter, r *http.Request) {
 	lobbyIdString := r.PathValue("lobbyId")
 	lobbyId, err := uuid.Parse(lobbyIdString)
 	if err != nil {
-		http.Redirect(w, r, "/chronology/lobbies", http.StatusSeeOther)
+		http.Redirect(w, r, "/timeline-trivia/lobbies", http.StatusSeeOther)
 		return
 	}
 
 	lobby, err := database.GetLobby(lobbyId)
 	if err != nil {
-		http.Redirect(w, r, "/chronology/lobbies", http.StatusSeeOther)
+		http.Redirect(w, r, "/timeline-trivia/lobbies", http.StatusSeeOther)
 		return
 	}
 
 	if lobby.Id == uuid.Nil {
-		http.Redirect(w, r, "/chronology/lobbies", http.StatusSeeOther)
+		http.Redirect(w, r, "/timeline-trivia/lobbies", http.StatusSeeOther)
 		return
 	}
 
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Chronology - Access"
+	basePageData.PageTitle = "Timeline Trivia - Access"
 
 	hasLobbyAccess, err := gsDatabase.UserHasLobbyAccess(basePageData.User.Id, lobbyId)
 	if err != nil {
@@ -566,7 +564,7 @@ func ChronologyLobbyAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hasLobbyAccess {
-		http.Redirect(w, r, fmt.Sprintf("/chronology/%s", lobbyId), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/timeline-trivia/%s", lobbyId), http.StatusSeeOther)
 		return
 	}
 

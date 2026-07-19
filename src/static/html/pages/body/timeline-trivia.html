@@ -1,0 +1,90 @@
+{{define "body"}}
+<link rel="stylesheet" href="/gs/css/chat.css" />
+<script src="/gs/js/chat.js"></script>
+<script src="/static/js/timeline-trivia.js"></script>
+<link rel="stylesheet" href="/static/css/timeline-trivia.css" />
+
+<div id="timeline-trivia-container">
+    <!-- Top Header: Lobby Name and Stats only -->
+    <div id="timeline-trivia-header">
+        <div class="header-top">
+            <span class="lobby-name">{{.Lobby.Name}}</span>
+            <div class="header-stats">
+                <span class="info-stat">Cards to win: <strong>{{.Game.CardsToWin}}</strong></span>
+                <span class="info-stat" id="draw-pile-count">Remaining: <strong>--</strong></span>
+            </div>
+        </div>
+        {{if .YearRanges}}
+        <div class="header-year-ranges">
+            <span class="year-ranges-label">Years:</span>
+            {{range .YearRanges}}
+            <span class="year-range-chip">{{.FromYear}}&ndash;{{.ToYear}}</span>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+
+    <!-- Current Event Banner -->
+    <div id="timeline-trivia-current-event">
+        <div id="current-card-content"
+             hx-get="/api/timeline-trivia/{{.Lobby.Id}}/current-card"
+             hx-trigger="load">
+            <!-- Card loaded via HTMX -->
+        </div>
+    </div>
+
+    <!-- Timeline Section - Centered -->
+    <div id="timeline-trivia-timeline-section">
+        <div id="timeline-trivia-timeline"
+             hx-get="/api/timeline-trivia/{{.Lobby.Id}}/timeline"
+             hx-trigger="load">
+            <!-- Timeline loaded via HTMX -->
+        </div>
+    </div>
+
+    <!-- Controls (Start Game / Game Over only) -->
+    <div id="timeline-trivia-controls">
+        {{if eq .Game.GameStatus "waiting"}}
+        <p>Waiting for players to join...</p>
+        <button
+            hx-post="/api/timeline-trivia/{{.Lobby.Id}}/start"
+            hx-target="#timeline-trivia-message">
+            Start Game
+        </button>
+        <div id="timeline-trivia-message"></div>
+        {{else if eq .Game.GameStatus "finished"}}
+        {{if .Game.WinnerId.Valid}}
+        <p class="winner-text">🎉 Winner: <strong>{{.WinnerName}}</strong></p>
+        {{end}}
+        <button
+            hx-post="/api/timeline-trivia/{{.Lobby.Id}}/reset"
+            hx-target="#timeline-trivia-message">
+            Start New Game
+        </button>
+        <a href="/timeline-trivia/lobbies" class="btn-link">Back to Games</a>
+        <div id="timeline-trivia-message"></div>
+        {{else}}
+        <div id="timeline-trivia-message"></div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Chat -->
+<div id="timeline-trivia-chat">
+    <div id="timeline-trivia-chat-messages"></div>
+    <form id="timeline-trivia-chat-form">
+        <input
+            id="timeline-trivia-chat-input"
+            type="text"
+            maxlength="255"
+            placeholder="Send a message..."
+        />
+        <input type="submit" value="Send" />
+    </form>
+</div>
+
+<script>
+    // Initialize WebSocket for real-time updates
+    initTimelineTriviaWebSocket("{{.Lobby.Id}}", "{{.PlayerId}}");
+</script>
+{{end}}

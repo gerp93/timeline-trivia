@@ -3,7 +3,7 @@ module github.com/gerp93/card-timeline
 go 1.22.5
 
 require (
-	github.com/gerp93/gameshell-framework v0.1.0
+	github.com/gerp93/gameshell-framework v0.2.0
 	github.com/google/uuid v1.6.0
 )
 

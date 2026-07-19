@@ -24,37 +24,6 @@
     </div>
 </div>
 <form id="table-filter-form">
-    <label for="categorySearch">Category:</label>
-    <select
-        id="categorySearch"
-        name="category"
-        autocomplete="off"
-        onchange="submitTableFilterForm()"
-        required
-    >
-        {{if eq .Category "PROMPT"}}
-        <option value="%">Any</option>
-        <option
-            value="PROMPT"
-            selected
-        >Prompt</option>
-        <option value="RESPONSE">Response</option>
-        {{else if eq .Category "RESPONSE"}}
-        <option value="%">Any</option>
-        <option value="PROMPT">Prompt</option>
-        <option
-            value="RESPONSE"
-            selected
-        >Response</option>
-        {{else}}
-        <option
-            value="%"
-            selected
-        >Any</option>
-        <option value="PROMPT">Prompt</option>
-        <option value="RESPONSE">Response</option>
-        {{end}}
-    </select>
     <label for="textSearch">Search:</label>
     <input
         type="search"
@@ -106,10 +75,8 @@ No cards found with that search criteria.
             <th>Created</th>
             <th>Changed</th>
             <th>Edit</th>
-            <th>Category</th>
+            <th>Year</th>
             <th>Text</th>
-            <th>YouTube</th>
-            <th>Image</th>
             <th>Delete</th>
         </tr>
     </thead>
@@ -149,27 +116,15 @@ No cards found with that search criteria.
                                 value="{{.DeckId}}"
                                 hidden
                             />
-                            <label for="category{{.Id}}">Category</label>
-                            <select
-                                id="category{{.Id}}"
-                                name="category"
+                            <label for="year{{.Id}}">Year</label>
+                            <input
+                                type="number"
+                                id="year{{.Id}}"
+                                name="year"
+                                placeholder="Enter Year"
+                                {{if .Year.Valid}}value="{{.Year.Int64}}"{{end}}
                                 autocomplete="off"
-                                required="required"
-                            >
-                                {{if eq .Category "PROMPT"}}
-                                <option
-                                    value="PROMPT"
-                                    selected
-                                >Prompt</option>
-                                <option value="RESPONSE">Response</option>
-                                {{else}}
-                                <option value="PROMPT">Prompt</option>
-                                <option
-                                    value="RESPONSE"
-                                    selected
-                                >Response</option>
-                                {{end}}
-                            </select>
+                            />
                             <label
                                 for="text{{.Id}}"
                                 style="vertical-align: top"
@@ -181,26 +136,9 @@ No cards found with that search criteria.
                                 placeholder="Enter Text"
                                 required="required"
                                 cols="40"
-                                rows="10"
+                                rows="6"
                                 autocomplete="off"
                             >{{.Text}}</textarea>
-                            <label
-                                for="youtube{{.Id}}"
-                                style="vertical-align: top"
-                            >YouTube Video ID</label>
-                            <input
-                                type="text"
-                                id="youtube{{.Id}}"
-                                name="youtube"
-                                title="Must be 11 characters or empty"
-                                pattern=".{11}|^$"
-                                maxlength="11"
-                                placeholder="Enter YouTube Video ID"
-                                {{if .YouTube.Valid}}
-                                value="{{.YouTube.String}}"
-                                {{end}}
-                                autocomplete="off"
-                            />
                         </div>
                         <div class="htmx-result"></div>
                         <input
@@ -208,65 +146,10 @@ No cards found with that search criteria.
                             value="Update Card"
                         />
                     </form>
-                    {{if .YouTube.Valid}}
-                    <br />
-                    <div class="iframe-container">
-                        <iframe src="https://www.youtube.com/embed/{{.YouTube.String}}"></iframe>
-                    </div>
-                    {{end}}
-                    <br />
-                    <form
-                        enctype="multipart/form-data"
-                        hx-put="/api/card/{{.Id}}/image"
-                        hx-target="find .htmx-result"
-                    >
-                        {{if .Image.Valid}}
-                        <img
-                            src="data:image;base64,{{.Image.String}}"
-                            alt="Card Image"
-                        />
-                        {{end}}
-                        <div class="form-input">
-                            <input
-                                type="file"
-                                name="deckId"
-                                value="{{.DeckId}}"
-                                hidden
-                            />
-                            <label for="image{{.Id}}">Image</label>
-                            <input
-                                type="file"
-                                id="image{{.Id}}"
-                                name="image"
-                                accept="image/*"
-                                autocomplete="off"
-                            />
-                        </div>
-                        <div class="htmx-result"></div>
-                        <input
-                            type="submit"
-                            value="Set Image"
-                        />
-                    </form>
-                    <br />
                 </dialog>
             </td>
-            <td>{{if eq .Category "PROMPT"}} Prompt {{else}} Response {{end}}</td>
+            <td>{{if .Year.Valid}}{{.Year.Int64}}{{else}}<em>none</em>{{end}}</td>
             <td class="wrap-new-lines">{{.Text}}</td>
-            <td>
-                {{if .YouTube.Valid}}
-                <div style="text-align: center;">
-                    <span class="bi bi-youtube"></span>
-                </div>
-                {{end}}
-            </td>
-            <td>
-                {{if .Image.Valid}}
-                <div style="text-align: center;">
-                    <span class="bi bi-card-image"></span>
-                </div>
-                {{end}}
-            </td>
             <td>
                 <div style="text-align: center;">
                     <span
@@ -441,19 +324,14 @@ No cards found with that search criteria.
                 value="{{.Deck.Id}}"
                 hidden
             />
-            <label for="newCardCategory">Category</label>
-            <select
-                id="newCardCategory"
-                name="category"
+            <label for="newCardYear">Year</label>
+            <input
+                type="number"
+                id="newCardYear"
+                name="year"
+                placeholder="Enter Year"
                 autocomplete="off"
-                required
-            >
-                <option value="PROMPT">Prompt</option>
-                <option
-                    value="RESPONSE"
-                    selected
-                >Response</option>
-            </select>
+            />
             <label
                 for="newCardText"
                 style="vertical-align: top"
@@ -461,27 +339,13 @@ No cards found with that search criteria.
             <textarea
                 id="newCardText"
                 name="text"
-                maxlength="255"
+                maxlength="510"
                 placeholder="Enter New Card Text"
                 required="required"
                 cols="40"
-                rows="10"
+                rows="6"
                 autocomplete="off"
             ></textarea>
-            <label
-                for="newCardYouTube"
-                style="vertical-align: top"
-            >YouTube Video ID</label>
-            <input
-                type="text"
-                id="newCardYouTube"
-                name="youtube"
-                title="Must be 11 characters or empty"
-                pattern=".{11}|^$"
-                maxlength="11"
-                placeholder="Enter YouTube Video ID"
-                autocomplete="off"
-            />
         </div>
         <br />
         <div class="htmx-result"></div>

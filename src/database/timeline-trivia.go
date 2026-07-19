@@ -4,16 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"regexp"
-	"strconv"
 	"time"
 
 	gsDatabase "github.com/gerp93/gameshell-framework/database"
 	"github.com/google/uuid"
 )
 
-// ChronologyGame represents a Chronology game instance
-type ChronologyGame struct {
+// TimelineTriviaGame represents a TimelineTrivia game instance
+type TimelineTriviaGame struct {
 	Id              uuid.UUID
 	LobbyId         uuid.UUID
 	CreatedOnDate   time.Time
@@ -23,8 +21,8 @@ type ChronologyGame struct {
 	WinnerId        uuid.NullUUID
 }
 
-// ChronologyTimelineCard represents a card in a player's timeline
-type ChronologyTimelineCard struct {
+// TimelineTriviaTimelineCard represents a card in a player's timeline
+type TimelineTriviaTimelineCard struct {
 	Id           uuid.UUID
 	CardId       uuid.UUID
 	CardText     string
@@ -33,15 +31,15 @@ type ChronologyTimelineCard struct {
 	PlacedOnDate time.Time
 }
 
-// ChronologyCurrentCard represents the current card being played
-type ChronologyCurrentCard struct {
+// TimelineTriviaCurrentCard represents the current card being played
+type TimelineTriviaCurrentCard struct {
 	CardId   uuid.UUID
 	CardText string
 	CardYear int
 }
 
-// ChronologyPlayer represents a player in a Chronology game with their timeline
-type ChronologyPlayer struct {
+// TimelineTriviaPlayer represents a player in a TimelineTrivia game with their timeline
+type TimelineTriviaPlayer struct {
 	PlayerId     uuid.UUID
 	UserId       uuid.UUID
 	UserName     string
@@ -50,28 +48,28 @@ type ChronologyPlayer struct {
 	IsCurrent    bool
 }
 
-// ChronologyPlayerTimeline represents a player with their full timeline for display
-type ChronologyPlayerTimeline struct {
+// TimelineTriviaPlayerTimeline represents a player with their full timeline for display
+type TimelineTriviaPlayerTimeline struct {
 	PlayerId   uuid.UUID
 	PlayerName string
 	IsCurrent  bool
 	IsMe       bool
-	Timeline   []ChronologyTimelineCard
+	Timeline   []TimelineTriviaTimelineCard
 }
 
-// GetChronologyGame retrieves the Chronology game for a lobby
-func GetChronologyGame(lobbyId uuid.UUID) (ChronologyGame, error) {
-	return getChronologyGameByColumn("LOBBY_ID", lobbyId)
+// GetTimelineTriviaGame retrieves the TimelineTrivia game for a lobby
+func GetTimelineTriviaGame(lobbyId uuid.UUID) (TimelineTriviaGame, error) {
+	return getTimelineTriviaGameByColumn("LOBBY_ID", lobbyId)
 }
 
-// GetChronologyGameById retrieves the Chronology game by its ID
-func GetChronologyGameById(gameId uuid.UUID) (ChronologyGame, error) {
-	return getChronologyGameByColumn("ID", gameId)
+// GetTimelineTriviaGameById retrieves the TimelineTrivia game by its ID
+func GetTimelineTriviaGameById(gameId uuid.UUID) (TimelineTriviaGame, error) {
+	return getTimelineTriviaGameByColumn("ID", gameId)
 }
 
-// getChronologyGameByColumn is a helper to retrieve a game by a specific column
-func getChronologyGameByColumn(column string, value uuid.UUID) (ChronologyGame, error) {
-	var game ChronologyGame
+// getTimelineTriviaGameByColumn is a helper to retrieve a game by a specific column
+func getTimelineTriviaGameByColumn(column string, value uuid.UUID) (TimelineTriviaGame, error) {
+	var game TimelineTriviaGame
 
 	sqlString := fmt.Sprintf(`
 		SELECT
@@ -82,7 +80,7 @@ func getChronologyGameByColumn(column string, value uuid.UUID) (ChronologyGame, 
 			GAME_STATUS,
 			CARDS_TO_WIN,
 			WINNER_ID
-		FROM CHRONOLOGY_GAME
+		FROM TIMELINE_TRIVIA_GAME
 		WHERE %s = ?
 	`, column)
 	rows, err := query(sqlString, value)
@@ -109,8 +107,8 @@ func getChronologyGameByColumn(column string, value uuid.UUID) (ChronologyGame, 
 	return game, nil
 }
 
-// CreateChronologyGame creates a new Chronology game for a lobby
-func CreateChronologyGame(lobbyId uuid.UUID, cardsToWin int) (uuid.UUID, error) {
+// CreateTimelineTriviaGame creates a new TimelineTrivia game for a lobby
+func CreateTimelineTriviaGame(lobbyId uuid.UUID, cardsToWin int) (uuid.UUID, error) {
 	id, err := uuid.NewUUID()
 	if err != nil {
 		log.Println(err)
@@ -118,7 +116,7 @@ func CreateChronologyGame(lobbyId uuid.UUID, cardsToWin int) (uuid.UUID, error) 
 	}
 
 	sqlString := `
-		INSERT INTO CHRONOLOGY_GAME(
+		INSERT INTO TIMELINE_TRIVIA_GAME(
 			ID,
 			LOBBY_ID,
 			CARDS_TO_WIN
@@ -128,15 +126,15 @@ func CreateChronologyGame(lobbyId uuid.UUID, cardsToWin int) (uuid.UUID, error) 
 	return id, execute(sqlString, id, lobbyId, cardsToWin)
 }
 
-// CreateChronologyLobby creates a new lobby for Chronology, delegating base
+// CreateTimelineTriviaLobby creates a new lobby for TimelineTrivia, delegating base
 // lobby creation to the gameshell framework.
-func CreateChronologyLobby(name string, password string) (uuid.UUID, error) {
+func CreateTimelineTriviaLobby(name string, password string) (uuid.UUID, error) {
 	return gsDatabase.CreateLobby(name, "", password)
 }
 
-// InitializeChronologyDrawPile populates the draw pile with cards from decks
+// InitializeTimelineTriviaDrawPile populates the draw pile with cards from decks
 // Cards must have a year in their text (extracted via regex)
-func InitializeChronologyDrawPile(gameId uuid.UUID, deckIds []uuid.UUID) error {
+func InitializeTimelineTriviaDrawPile(gameId uuid.UUID, deckIds []uuid.UUID) error {
 	if len(deckIds) == 0 {
 		return errors.New("no decks provided")
 	}
@@ -153,94 +151,101 @@ func InitializeChronologyDrawPile(gameId uuid.UUID, deckIds []uuid.UUID) error {
 		args = append(args, deckId)
 	}
 
-	// Get all cards from the decks (using PROMPT cards as Chronology events)
+	// Pull the deck cards that have an authored year into the draw pile.
 	sqlString := `
-		INSERT INTO CHRONOLOGY_DRAW_PILE (ID, CHRONOLOGY_GAME_ID, CARD_ID, CARD_YEAR)
-		SELECT UUID(), ?, C.ID, 0
+		INSERT INTO TIMELINE_TRIVIA_DRAW_PILE (ID, TIMELINE_TRIVIA_GAME_ID, CARD_ID, CARD_YEAR)
+		SELECT UUID(), ?, C.ID, C.CARD_YEAR
 		FROM CARD C
 		WHERE C.DECK_ID IN (` + placeholders + `)
-		AND C.CATEGORY = 'PROMPT'
+			AND C.CARD_YEAR IS NOT NULL
 	`
 	return execute(sqlString, args...)
 }
 
-// ParseYearFromText extracts a 4-digit year from card text
-// Returns 0 if no year found
-func ParseYearFromText(text string) int {
-	// Match 4-digit years (1000-2999)
-	re := regexp.MustCompile(`\b([12]\d{3})\b`)
-	matches := re.FindStringSubmatch(text)
-	if len(matches) > 1 {
-		year, err := strconv.Atoi(matches[1])
-		if err == nil {
-			return year
-		}
-	}
-	return 0
+// TimelineTriviaYearRange is one inclusive [FromYear, ToYear] filter for a game.
+type TimelineTriviaYearRange struct {
+	FromYear int
+	ToYear   int
 }
 
-// UpdateDrawPileYears updates the years for all cards in the draw pile
-// by parsing the year from each card's text
-func UpdateDrawPileYears(gameId uuid.UUID) error {
-	// Get all cards in draw pile
+// AddYearRange stores one inclusive year-range filter for a game.
+func AddYearRange(gameId uuid.UUID, fromYear int, toYear int) error {
+	id, err := uuid.NewUUID()
+	if err != nil {
+		log.Println(err)
+		return errors.New("failed to generate new id")
+	}
 	sqlString := `
-		SELECT DP.ID, C.TEXT
-		FROM CHRONOLOGY_DRAW_PILE DP
-		INNER JOIN CARD C ON C.ID = DP.CARD_ID
-		WHERE DP.CHRONOLOGY_GAME_ID = ?
+		INSERT INTO TIMELINE_TRIVIA_YEAR_RANGE (ID, TIMELINE_TRIVIA_GAME_ID, FROM_YEAR, TO_YEAR)
+		VALUES (?, ?, ?, ?)
+	`
+	return execute(sqlString, id, gameId, fromYear, toYear)
+}
+
+// GetYearRanges returns a game's year-range filters (empty = no filter).
+func GetYearRanges(gameId uuid.UUID) ([]TimelineTriviaYearRange, error) {
+	sqlString := `
+		SELECT FROM_YEAR, TO_YEAR
+		FROM TIMELINE_TRIVIA_YEAR_RANGE
+		WHERE TIMELINE_TRIVIA_GAME_ID = ?
+		ORDER BY FROM_YEAR
 	`
 	rows, err := query(sqlString, gameId)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rows.Close()
 
-	type cardYear struct {
-		id   uuid.UUID
-		year int
-	}
-	updates := make([]cardYear, 0)
-
+	result := make([]TimelineTriviaYearRange, 0)
 	for rows.Next() {
-		var id uuid.UUID
-		var text string
-		if err := rows.Scan(&id, &text); err != nil {
+		var r TimelineTriviaYearRange
+		if err := rows.Scan(&r.FromYear, &r.ToYear); err != nil {
 			log.Println(err)
-			continue
+			return nil, errors.New("failed to scan row in query results")
 		}
-		year := ParseYearFromText(text)
-		if year > 0 {
-			updates = append(updates, cardYear{id: id, year: year})
-		}
+		result = append(result, r)
 	}
-
-	// Update each card's year
-	for _, u := range updates {
-		sqlUpdate := `UPDATE CHRONOLOGY_DRAW_PILE SET CARD_YEAR = ? WHERE ID = ?`
-		if err := execute(sqlUpdate, u.year, u.id); err != nil {
-			log.Println(err)
-		}
-	}
-
-	// Remove cards without valid years
-	sqlDelete := `DELETE FROM CHRONOLOGY_DRAW_PILE WHERE CHRONOLOGY_GAME_ID = ? AND CARD_YEAR = 0`
-	return execute(sqlDelete, gameId)
+	return result, nil
 }
 
-// DrawChronologyCard draws a random card from the draw pile and sets it as current
-func DrawChronologyCard(gameId uuid.UUID) error {
+// ApplyYearRangeFilter removes draw-pile cards whose year falls outside every
+// configured range. No-op when the game has no ranges.
+func ApplyYearRangeFilter(gameId uuid.UUID) error {
+	ranges, err := GetYearRanges(gameId)
+	if err != nil {
+		return err
+	}
+	if len(ranges) == 0 {
+		return nil
+	}
+
+	sqlDelete := `
+		DELETE FROM TIMELINE_TRIVIA_DRAW_PILE
+		WHERE TIMELINE_TRIVIA_GAME_ID = ?
+			AND NOT EXISTS (
+				SELECT 1
+				FROM TIMELINE_TRIVIA_YEAR_RANGE R
+				WHERE R.TIMELINE_TRIVIA_GAME_ID = ?
+					AND CARD_YEAR BETWEEN R.FROM_YEAR AND R.TO_YEAR
+			)
+	`
+	return execute(sqlDelete, gameId, gameId)
+}
+
+// DrawTimelineTriviaCard draws a random card from the draw pile and sets it as current
+func DrawTimelineTriviaCard(gameId uuid.UUID) error {
 	// Clear any existing current card
-	sqlClear := `DELETE FROM CHRONOLOGY_CURRENT_CARD WHERE CHRONOLOGY_GAME_ID = ?`
+	sqlClear := `DELETE FROM TIMELINE_TRIVIA_CURRENT_CARD WHERE TIMELINE_TRIVIA_GAME_ID = ?`
 	if err := execute(sqlClear, gameId); err != nil {
 		return err
 	}
 
 	// Get a random undrawn card
 	sqlDraw := `
-		INSERT INTO CHRONOLOGY_CURRENT_CARD (ID, CHRONOLOGY_GAME_ID, CARD_ID, CARD_YEAR)
+		INSERT INTO TIMELINE_TRIVIA_CURRENT_CARD (ID, TIMELINE_TRIVIA_GAME_ID, CARD_ID, CARD_YEAR)
 		SELECT UUID(), ?, CARD_ID, CARD_YEAR
-		FROM CHRONOLOGY_DRAW_PILE
-		WHERE CHRONOLOGY_GAME_ID = ? AND DRAWN = 0
+		FROM TIMELINE_TRIVIA_DRAW_PILE
+		WHERE TIMELINE_TRIVIA_GAME_ID = ? AND DRAWN = 0
 		ORDER BY RAND()
 		LIMIT 1
 	`
@@ -250,23 +255,23 @@ func DrawChronologyCard(gameId uuid.UUID) error {
 
 	// Mark the card as drawn
 	sqlMark := `
-		UPDATE CHRONOLOGY_DRAW_PILE
+		UPDATE TIMELINE_TRIVIA_DRAW_PILE
 		SET DRAWN = 1
-		WHERE CHRONOLOGY_GAME_ID = ?
-		AND CARD_ID = (SELECT CARD_ID FROM CHRONOLOGY_CURRENT_CARD WHERE CHRONOLOGY_GAME_ID = ?)
+		WHERE TIMELINE_TRIVIA_GAME_ID = ?
+		AND CARD_ID = (SELECT CARD_ID FROM TIMELINE_TRIVIA_CURRENT_CARD WHERE TIMELINE_TRIVIA_GAME_ID = ?)
 	`
 	return execute(sqlMark, gameId, gameId)
 }
 
-// GetChronologyCurrentCard gets the current card being played
-func GetChronologyCurrentCard(gameId uuid.UUID) (ChronologyCurrentCard, error) {
-	var card ChronologyCurrentCard
+// GetTimelineTriviaCurrentCard gets the current card being played
+func GetTimelineTriviaCurrentCard(gameId uuid.UUID) (TimelineTriviaCurrentCard, error) {
+	var card TimelineTriviaCurrentCard
 
 	sqlString := `
 		SELECT CC.CARD_ID, C.TEXT, CC.CARD_YEAR
-		FROM CHRONOLOGY_CURRENT_CARD CC
+		FROM TIMELINE_TRIVIA_CURRENT_CARD CC
 		INNER JOIN CARD C ON C.ID = CC.CARD_ID
-		WHERE CC.CHRONOLOGY_GAME_ID = ?
+		WHERE CC.TIMELINE_TRIVIA_GAME_ID = ?
 	`
 	rows, err := query(sqlString, gameId)
 	if err != nil {
@@ -285,12 +290,12 @@ func GetChronologyCurrentCard(gameId uuid.UUID) (ChronologyCurrentCard, error) {
 }
 
 // GetPlayerTimeline gets all cards in a player's timeline for a game
-func GetPlayerTimeline(gameId uuid.UUID, playerId uuid.UUID) ([]ChronologyTimelineCard, error) {
+func GetPlayerTimeline(gameId uuid.UUID, playerId uuid.UUID) ([]TimelineTriviaTimelineCard, error) {
 	sqlString := `
 		SELECT PT.ID, PT.CARD_ID, C.TEXT, PT.CARD_YEAR, PT.POSITION, PT.PLACED_ON_DATE
-		FROM CHRONOLOGY_PLAYER_TIMELINE PT
+		FROM TIMELINE_TRIVIA_PLAYER_TIMELINE PT
 		INNER JOIN CARD C ON C.ID = PT.CARD_ID
-		WHERE PT.CHRONOLOGY_GAME_ID = ? AND PT.PLAYER_ID = ?
+		WHERE PT.TIMELINE_TRIVIA_GAME_ID = ? AND PT.PLAYER_ID = ?
 		ORDER BY PT.POSITION ASC
 	`
 	rows, err := query(sqlString, gameId, playerId)
@@ -299,9 +304,9 @@ func GetPlayerTimeline(gameId uuid.UUID, playerId uuid.UUID) ([]ChronologyTimeli
 	}
 	defer rows.Close()
 
-	result := make([]ChronologyTimelineCard, 0)
+	result := make([]TimelineTriviaTimelineCard, 0)
 	for rows.Next() {
-		var card ChronologyTimelineCard
+		var card TimelineTriviaTimelineCard
 		if err := rows.Scan(
 			&card.Id,
 			&card.CardId,
@@ -320,23 +325,23 @@ func GetPlayerTimeline(gameId uuid.UUID, playerId uuid.UUID) ([]ChronologyTimeli
 }
 
 // GetAllPlayerTimelines gets all players' timelines for a game, ordered with current player first
-func GetAllPlayerTimelines(gameId uuid.UUID, currentPlayerId uuid.UUID, viewingPlayerId uuid.UUID) ([]ChronologyPlayerTimeline, error) {
+func GetAllPlayerTimelines(gameId uuid.UUID, currentPlayerId uuid.UUID, viewingPlayerId uuid.UUID) ([]TimelineTriviaPlayerTimeline, error) {
 	// Get all active players
-	players, err := GetChronologyPlayers(gameId)
+	players, err := GetTimelineTriviaPlayers(gameId)
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]ChronologyPlayerTimeline, 0, len(players))
+	result := make([]TimelineTriviaPlayerTimeline, 0, len(players))
 
 	// First add current player
 	for _, p := range players {
 		if p.IsActive && p.PlayerId == currentPlayerId {
 			timeline, err := GetPlayerTimeline(gameId, p.PlayerId)
 			if err != nil {
-				timeline = []ChronologyTimelineCard{}
+				timeline = []TimelineTriviaTimelineCard{}
 			}
-			result = append(result, ChronologyPlayerTimeline{
+			result = append(result, TimelineTriviaPlayerTimeline{
 				PlayerId:   p.PlayerId,
 				PlayerName: p.UserName,
 				IsCurrent:  true,
@@ -352,9 +357,9 @@ func GetAllPlayerTimelines(gameId uuid.UUID, currentPlayerId uuid.UUID, viewingP
 		if p.IsActive && p.PlayerId != currentPlayerId {
 			timeline, err := GetPlayerTimeline(gameId, p.PlayerId)
 			if err != nil {
-				timeline = []ChronologyTimelineCard{}
+				timeline = []TimelineTriviaTimelineCard{}
 			}
-			result = append(result, ChronologyPlayerTimeline{
+			result = append(result, TimelineTriviaPlayerTimeline{
 				PlayerId:   p.PlayerId,
 				PlayerName: p.UserName,
 				IsCurrent:  false,
@@ -371,7 +376,7 @@ func GetAllPlayerTimelines(gameId uuid.UUID, currentPlayerId uuid.UUID, viewingP
 // Returns true if placement was correct, false otherwise
 func PlaceCardInTimeline(gameId uuid.UUID, playerId uuid.UUID, position int) (bool, error) {
 	// Get the current card
-	currentCard, err := GetChronologyCurrentCard(gameId)
+	currentCard, err := GetTimelineTriviaCurrentCard(gameId)
 	if err != nil {
 		return false, err
 	}
@@ -408,9 +413,9 @@ func PlaceCardInTimeline(gameId uuid.UUID, playerId uuid.UUID, position int) (bo
 	if correct {
 		// Shift existing cards to make room
 		sqlShift := `
-			UPDATE CHRONOLOGY_PLAYER_TIMELINE
+			UPDATE TIMELINE_TRIVIA_PLAYER_TIMELINE
 			SET POSITION = POSITION + 1
-			WHERE CHRONOLOGY_GAME_ID = ? AND PLAYER_ID = ? AND POSITION >= ?
+			WHERE TIMELINE_TRIVIA_GAME_ID = ? AND PLAYER_ID = ? AND POSITION >= ?
 		`
 		if err := execute(sqlShift, gameId, playerId, position); err != nil {
 			return false, err
@@ -422,7 +427,7 @@ func PlaceCardInTimeline(gameId uuid.UUID, playerId uuid.UUID, position int) (bo
 			return false, err
 		}
 		sqlInsert := `
-			INSERT INTO CHRONOLOGY_PLAYER_TIMELINE (ID, CHRONOLOGY_GAME_ID, PLAYER_ID, CARD_ID, CARD_YEAR, POSITION)
+			INSERT INTO TIMELINE_TRIVIA_PLAYER_TIMELINE (ID, TIMELINE_TRIVIA_GAME_ID, PLAYER_ID, CARD_ID, CARD_YEAR, POSITION)
 			VALUES (?, ?, ?, ?, ?, ?)
 		`
 		if err := execute(sqlInsert, id, gameId, playerId, currentCard.CardId, currentCard.CardYear, position); err != nil {
@@ -431,7 +436,7 @@ func PlaceCardInTimeline(gameId uuid.UUID, playerId uuid.UUID, position int) (bo
 	}
 
 	// Clear current card
-	sqlClear := `DELETE FROM CHRONOLOGY_CURRENT_CARD WHERE CHRONOLOGY_GAME_ID = ?`
+	sqlClear := `DELETE FROM TIMELINE_TRIVIA_CURRENT_CARD WHERE TIMELINE_TRIVIA_GAME_ID = ?`
 	if err := execute(sqlClear, gameId); err != nil {
 		return correct, err
 	}
@@ -439,8 +444,8 @@ func PlaceCardInTimeline(gameId uuid.UUID, playerId uuid.UUID, position int) (bo
 	return correct, nil
 }
 
-// GetChronologyPlayers gets all players in a Chronology game with their timeline sizes
-func GetChronologyPlayers(gameId uuid.UUID) ([]ChronologyPlayer, error) {
+// GetTimelineTriviaPlayers gets all players in a TimelineTrivia game with their timeline sizes
+func GetTimelineTriviaPlayers(gameId uuid.UUID) ([]TimelineTriviaPlayer, error) {
 	sqlString := `
 		SELECT 
 			P.ID,
@@ -448,12 +453,12 @@ func GetChronologyPlayers(gameId uuid.UUID) ([]ChronologyPlayer, error) {
 			U.NAME,
 			P.IS_ACTIVE,
 			COALESCE(
-				(SELECT COUNT(*) FROM CHRONOLOGY_PLAYER_TIMELINE PT 
-				 WHERE PT.CHRONOLOGY_GAME_ID = CG.ID AND PT.PLAYER_ID = P.ID),
+				(SELECT COUNT(*) FROM TIMELINE_TRIVIA_PLAYER_TIMELINE PT 
+				 WHERE PT.TIMELINE_TRIVIA_GAME_ID = CG.ID AND PT.PLAYER_ID = P.ID),
 				0
 			) AS TIMELINE_SIZE,
 			CASE WHEN CG.CURRENT_PLAYER_ID = P.ID THEN 1 ELSE 0 END AS IS_CURRENT
-		FROM CHRONOLOGY_GAME CG
+		FROM TIMELINE_TRIVIA_GAME CG
 		INNER JOIN LOBBY L ON L.ID = CG.LOBBY_ID
 		INNER JOIN PLAYER P ON P.LOBBY_ID = L.ID
 		INNER JOIN USER U ON U.ID = P.USER_ID
@@ -466,9 +471,9 @@ func GetChronologyPlayers(gameId uuid.UUID) ([]ChronologyPlayer, error) {
 	}
 	defer rows.Close()
 
-	result := make([]ChronologyPlayer, 0)
+	result := make([]TimelineTriviaPlayer, 0)
 	for rows.Next() {
-		var player ChronologyPlayer
+		var player TimelineTriviaPlayer
 		if err := rows.Scan(
 			&player.PlayerId,
 			&player.UserId,
@@ -486,15 +491,15 @@ func GetChronologyPlayers(gameId uuid.UUID) ([]ChronologyPlayer, error) {
 	return result, nil
 }
 
-// SetChronologyCurrentPlayer sets whose turn it is
-func SetChronologyCurrentPlayer(gameId uuid.UUID, playerId uuid.UUID) error {
-	sqlString := `UPDATE CHRONOLOGY_GAME SET CURRENT_PLAYER_ID = ? WHERE ID = ?`
+// SetTimelineTriviaCurrentPlayer sets whose turn it is
+func SetTimelineTriviaCurrentPlayer(gameId uuid.UUID, playerId uuid.UUID) error {
+	sqlString := `UPDATE TIMELINE_TRIVIA_GAME SET CURRENT_PLAYER_ID = ? WHERE ID = ?`
 	return execute(sqlString, playerId, gameId)
 }
 
-// AdvanceChronologyTurn moves to the next active player
-func AdvanceChronologyTurn(gameId uuid.UUID) error {
-	players, err := GetChronologyPlayers(gameId)
+// AdvanceTimelineTriviaTurn moves to the next active player
+func AdvanceTimelineTriviaTurn(gameId uuid.UUID) error {
+	players, err := GetTimelineTriviaPlayers(gameId)
 	if err != nil {
 		return err
 	}
@@ -518,15 +523,15 @@ func AdvanceChronologyTurn(gameId uuid.UUID) error {
 	}
 
 	if nextIdx < len(players) {
-		return SetChronologyCurrentPlayer(gameId, players[nextIdx].PlayerId)
+		return SetTimelineTriviaCurrentPlayer(gameId, players[nextIdx].PlayerId)
 	}
 
 	return errors.New("no active players found")
 }
 
-// StartChronologyGame starts the game by setting status and first player
-func StartChronologyGame(gameId uuid.UUID) error {
-	players, err := GetChronologyPlayers(gameId)
+// StartTimelineTriviaGame starts the game by setting status and first player
+func StartTimelineTriviaGame(gameId uuid.UUID) error {
+	players, err := GetTimelineTriviaPlayers(gameId)
 	if err != nil {
 		return err
 	}
@@ -543,8 +548,8 @@ func StartChronologyGame(gameId uuid.UUID) error {
 			var cardYear int
 			sqlGetCard := `
 				SELECT CARD_ID, CARD_YEAR
-				FROM CHRONOLOGY_DRAW_PILE
-				WHERE CHRONOLOGY_GAME_ID = ? AND DRAWN = 0
+				FROM TIMELINE_TRIVIA_DRAW_PILE
+				WHERE TIMELINE_TRIVIA_GAME_ID = ? AND DRAWN = 0
 				ORDER BY RAND()
 				LIMIT 1
 			`
@@ -563,7 +568,7 @@ func StartChronologyGame(gameId uuid.UUID) error {
 			}
 
 			// Mark card as drawn
-			sqlMarkDrawn := `UPDATE CHRONOLOGY_DRAW_PILE SET DRAWN = 1 WHERE CHRONOLOGY_GAME_ID = ? AND CARD_ID = ?`
+			sqlMarkDrawn := `UPDATE TIMELINE_TRIVIA_DRAW_PILE SET DRAWN = 1 WHERE TIMELINE_TRIVIA_GAME_ID = ? AND CARD_ID = ?`
 			if err := execute(sqlMarkDrawn, gameId, cardId); err != nil {
 				return err
 			}
@@ -574,7 +579,7 @@ func StartChronologyGame(gameId uuid.UUID) error {
 				return err
 			}
 			sqlAddToTimeline := `
-				INSERT INTO CHRONOLOGY_PLAYER_TIMELINE (ID, CHRONOLOGY_GAME_ID, PLAYER_ID, CARD_ID, CARD_YEAR, POSITION)
+				INSERT INTO TIMELINE_TRIVIA_PLAYER_TIMELINE (ID, TIMELINE_TRIVIA_GAME_ID, PLAYER_ID, CARD_ID, CARD_YEAR, POSITION)
 				VALUES (?, ?, ?, ?, ?, 0)
 			`
 			if err := execute(sqlAddToTimeline, id, gameId, player.PlayerId, cardId, cardYear); err != nil {
@@ -597,37 +602,37 @@ func StartChronologyGame(gameId uuid.UUID) error {
 	}
 
 	// Set game as active and set first player
-	sqlString := `UPDATE CHRONOLOGY_GAME SET GAME_STATUS = 'active', CURRENT_PLAYER_ID = ? WHERE ID = ?`
+	sqlString := `UPDATE TIMELINE_TRIVIA_GAME SET GAME_STATUS = 'active', CURRENT_PLAYER_ID = ? WHERE ID = ?`
 	if err := execute(sqlString, firstPlayer, gameId); err != nil {
 		return err
 	}
 
 	// Draw first card for play
-	return DrawChronologyCard(gameId)
+	return DrawTimelineTriviaCard(gameId)
 }
 
-// ResetChronologyGame resets a finished game to play again
-func ResetChronologyGame(gameId uuid.UUID) error {
+// ResetTimelineTriviaGame resets a finished game to play again
+func ResetTimelineTriviaGame(gameId uuid.UUID) error {
 	// Clear all player timelines
-	sqlClearTimelines := `DELETE FROM CHRONOLOGY_PLAYER_TIMELINE WHERE CHRONOLOGY_GAME_ID = ?`
+	sqlClearTimelines := `DELETE FROM TIMELINE_TRIVIA_PLAYER_TIMELINE WHERE TIMELINE_TRIVIA_GAME_ID = ?`
 	if err := execute(sqlClearTimelines, gameId); err != nil {
 		return err
 	}
 
 	// Clear current card
-	sqlClearCurrentCard := `DELETE FROM CHRONOLOGY_CURRENT_CARD WHERE CHRONOLOGY_GAME_ID = ?`
+	sqlClearCurrentCard := `DELETE FROM TIMELINE_TRIVIA_CURRENT_CARD WHERE TIMELINE_TRIVIA_GAME_ID = ?`
 	if err := execute(sqlClearCurrentCard, gameId); err != nil {
 		return err
 	}
 
 	// Reset draw pile - mark all cards as not drawn
-	sqlResetDrawPile := `UPDATE CHRONOLOGY_DRAW_PILE SET DRAWN = 0 WHERE CHRONOLOGY_GAME_ID = ?`
+	sqlResetDrawPile := `UPDATE TIMELINE_TRIVIA_DRAW_PILE SET DRAWN = 0 WHERE TIMELINE_TRIVIA_GAME_ID = ?`
 	if err := execute(sqlResetDrawPile, gameId); err != nil {
 		return err
 	}
 
 	// Reset game status to waiting
-	sqlResetGame := `UPDATE CHRONOLOGY_GAME SET GAME_STATUS = 'waiting', CURRENT_PLAYER_ID = NULL, WINNER_ID = NULL WHERE ID = ?`
+	sqlResetGame := `UPDATE TIMELINE_TRIVIA_GAME SET GAME_STATUS = 'waiting', CURRENT_PLAYER_ID = NULL, WINNER_ID = NULL WHERE ID = ?`
 	if err := execute(sqlResetGame, gameId); err != nil {
 		return err
 	}
@@ -635,14 +640,14 @@ func ResetChronologyGame(gameId uuid.UUID) error {
 	return nil
 }
 
-// CheckChronologyWinner checks if any player has won
-func CheckChronologyWinner(gameId uuid.UUID) (uuid.UUID, error) {
-	game, err := GetChronologyGameById(gameId)
+// CheckTimelineTriviaWinner checks if any player has won
+func CheckTimelineTriviaWinner(gameId uuid.UUID) (uuid.UUID, error) {
+	game, err := GetTimelineTriviaGameById(gameId)
 	if err != nil {
 		return uuid.Nil, err
 	}
 
-	players, err := GetChronologyPlayers(gameId)
+	players, err := GetTimelineTriviaPlayers(gameId)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -650,7 +655,7 @@ func CheckChronologyWinner(gameId uuid.UUID) (uuid.UUID, error) {
 	for _, p := range players {
 		if p.TimelineSize >= game.CardsToWin {
 			// Set winner
-			sqlString := `UPDATE CHRONOLOGY_GAME SET GAME_STATUS = 'finished', WINNER_ID = ? WHERE ID = ?`
+			sqlString := `UPDATE TIMELINE_TRIVIA_GAME SET GAME_STATUS = 'finished', WINNER_ID = ? WHERE ID = ?`
 			if err := execute(sqlString, p.UserId, gameId); err != nil {
 				return uuid.Nil, err
 			}
@@ -661,12 +666,12 @@ func CheckChronologyWinner(gameId uuid.UUID) (uuid.UUID, error) {
 	return uuid.Nil, nil
 }
 
-// GetChronologyDrawPileCount returns the number of cards remaining in the draw pile
-func GetChronologyDrawPileCount(gameId uuid.UUID) (int, error) {
+// GetTimelineTriviaDrawPileCount returns the number of cards remaining in the draw pile
+func GetTimelineTriviaDrawPileCount(gameId uuid.UUID) (int, error) {
 	sqlString := `
 		SELECT COUNT(*)
-		FROM CHRONOLOGY_DRAW_PILE
-		WHERE CHRONOLOGY_GAME_ID = ? AND DRAWN = 0
+		FROM TIMELINE_TRIVIA_DRAW_PILE
+		WHERE TIMELINE_TRIVIA_GAME_ID = ? AND DRAWN = 0
 	`
 	rows, err := query(sqlString, gameId)
 	if err != nil {
@@ -685,8 +690,8 @@ func GetChronologyDrawPileCount(gameId uuid.UUID) (int, error) {
 	return count, nil
 }
 
-// ChronologyLobbyDetails represents a Chronology lobby for listing
-type ChronologyLobbyDetails struct {
+// TimelineTriviaLobbyDetails represents a TimelineTrivia lobby for listing
+type TimelineTriviaLobbyDetails struct {
 	Id          uuid.UUID
 	Name        string
 	PlayerCount int
@@ -694,8 +699,8 @@ type ChronologyLobbyDetails struct {
 	HasPassword bool
 }
 
-// SearchChronologyLobbies searches for Chronology-type lobbies
-func SearchChronologyLobbies(name string, page int) ([]ChronologyLobbyDetails, error) {
+// SearchTimelineTriviaLobbies searches for TimelineTrivia-type lobbies
+func SearchTimelineTriviaLobbies(name string, page int) ([]TimelineTriviaLobbyDetails, error) {
 	name = "%" + name + "%"
 
 	if page < 1 {
@@ -710,7 +715,7 @@ func SearchChronologyLobbies(name string, page int) ([]ChronologyLobbyDetails, e
 			COALESCE(CG.GAME_STATUS, 'waiting') AS GAME_STATUS,
 			COUNT(P.ID) AS PLAYER_COUNT
 		FROM LOBBY AS L
-			LEFT JOIN CHRONOLOGY_GAME AS CG ON CG.LOBBY_ID = L.ID
+			LEFT JOIN TIMELINE_TRIVIA_GAME AS CG ON CG.LOBBY_ID = L.ID
 			LEFT JOIN PLAYER AS P ON P.LOBBY_ID = L.ID AND P.IS_ACTIVE = 1
 		WHERE L.NAME LIKE ?
 		GROUP BY L.ID
@@ -723,9 +728,9 @@ func SearchChronologyLobbies(name string, page int) ([]ChronologyLobbyDetails, e
 	}
 	defer rows.Close()
 
-	result := make([]ChronologyLobbyDetails, 0)
+	result := make([]TimelineTriviaLobbyDetails, 0)
 	for rows.Next() {
-		var ld ChronologyLobbyDetails
+		var ld TimelineTriviaLobbyDetails
 		if err := rows.Scan(
 			&ld.Id,
 			&ld.Name,
@@ -741,8 +746,8 @@ func SearchChronologyLobbies(name string, page int) ([]ChronologyLobbyDetails, e
 	return result, nil
 }
 
-// CountChronologyLobbies counts Chronology-type lobbies matching name
-func CountChronologyLobbies(name string) (int, error) {
+// CountTimelineTriviaLobbies counts TimelineTrivia-type lobbies matching name
+func CountTimelineTriviaLobbies(name string) (int, error) {
 	name = "%" + name + "%"
 
 	sqlString := `

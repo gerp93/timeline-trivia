@@ -16,9 +16,9 @@
             {{if and $player.IsCurrent $player.IsMe (eq $.GameStatus "active")}}
             <div class="timeline-slot timeline-slot-end">
                 <button class="place-slot-button" 
-                        hx-post="/api/chronology/{{$.LobbyId}}/place-card" 
+                        hx-post="/api/timeline-trivia/{{$.LobbyId}}/place-card" 
                         hx-vals='{"position": 0}' 
-                        hx-target="#chronology-message"
+                        hx-target="#timeline-trivia-message"
                         hx-swap="innerHTML">
                     <span class="slot-arrow">◀</span>
                 </button>
@@ -33,9 +33,9 @@
             {{if and $player.IsCurrent $player.IsMe (eq $.GameStatus "active")}}
             <div class="timeline-slot {{if eq (add $index 1) (len $player.Timeline)}}timeline-slot-end{{end}}">
                 <button class="place-slot-button" 
-                        hx-post="/api/chronology/{{$.LobbyId}}/place-card" 
+                        hx-post="/api/timeline-trivia/{{$.LobbyId}}/place-card" 
                         hx-vals='{"position": {{add $index 1}}}' 
-                        hx-target="#chronology-message"
+                        hx-target="#timeline-trivia-message"
                         hx-swap="innerHTML">
                     {{if eq (add $index 1) (len $player.Timeline)}}
                     <span class="slot-arrow">▶</span>
