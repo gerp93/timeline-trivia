@@ -4,12 +4,43 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
 	gsDatabase "github.com/gerp93/gameshell-framework/database"
 	"github.com/google/uuid"
 )
+
+// FormatYear renders a card year for display: negative (BCE) years show as
+// a positive number with a "B.C.E" suffix instead of a leading minus.
+func FormatYear(year int) string {
+	if year < 0 {
+		return strconv.Itoa(-year) + " B.C.E"
+	}
+	return strconv.Itoa(year)
+}
+
+// MinCardsPerWinRatio is the minimum multiple of CardsToWin that a lobby's
+// selected decks/year-ranges must yield. Every round — hit or miss —
+// consumes exactly one card from the draw pile, so reaching CardsToWin
+// realistically takes several times that many rounds once other players'
+// turns and missed guesses are accounted for; picking too few cards for too
+// high a target risks the draw pile running dry before anyone wins.
+const MinCardsPerWinRatio = 3
+
+// ValidateCardsToWin returns a descriptive error if totalCards isn't enough
+// to safely support the given CardsToWin target (see MinCardsPerWinRatio).
+func ValidateCardsToWin(cardsToWin int, totalCards int) error {
+	minRequired := cardsToWin * MinCardsPerWinRatio
+	if totalCards < minRequired {
+		return fmt.Errorf(
+			"cards to win (%d) is too high for the selected decks/year ranges: %d matching card(s) found, at least %d are needed",
+			cardsToWin, totalCards, minRequired,
+		)
+	}
+	return nil
+}
 
 // TimelineTriviaGame represents a TimelineTrivia game instance
 type TimelineTriviaGame struct {

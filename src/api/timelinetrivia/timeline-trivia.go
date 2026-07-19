@@ -18,15 +18,6 @@ import (
 // TimelineTrivia deck ID
 var timelineTriviaDeckId = uuid.MustParse("88026803-d22a-11f0-b4d2-60cf84649547")
 
-// formatYear renders a card's year for display: negative (BCE) years show
-// as a positive number with a "B.C.E." suffix instead of a leading minus.
-func formatYear(year int) string {
-	if year < 0 {
-		return strconv.Itoa(-year) + " B.C.E"
-	}
-	return strconv.Itoa(year)
-}
-
 // ensureGameExists makes sure a TimelineTrivia game exists for a lobby, creating one if needed
 func ensureGameExists(lobbyId uuid.UUID) (database.TimelineTriviaGame, error) {
 	game, err := database.GetTimelineTriviaGame(lobbyId)
@@ -72,22 +63,6 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create the lobby with game_type = 'timeline-trivia'
-	lobbyId, err := database.CreateTimelineTriviaLobby(name, password)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to create lobby"))
-		return
-	}
-
-	// Create the TimelineTrivia game
-	gameId, err := database.CreateTimelineTriviaGame(lobbyId, cardsToWin)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to create game"))
-		return
-	}
-
 	// Get selected deck IDs
 	deckIdStrings := r.Form["deckId"]
 	if len(deckIdStrings) == 0 {
@@ -103,17 +78,11 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Initialize draw pile with cards from decks (cards use authored years)
-	if err := database.InitializeTimelineTriviaDrawPile(gameId, deckIds); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to initialize draw pile"))
-		return
-	}
-
-	// Store any year-range filters (parallel fromYear/toYear form arrays) and
-	// prune the draw pile to cards within those ranges. No ranges = no filter.
+	// Parse any year-range filters (parallel fromYear/toYear form arrays).
+	// No ranges = no filter, matching ApplyYearRangeFilter's semantics.
 	fromYears := r.Form["fromYear"]
 	toYears := r.Form["toYear"]
+	ranges := make([]database.TimelineTriviaYearRange, 0, len(fromYears))
 	for i := range fromYears {
 		if i >= len(toYears) {
 			break
@@ -131,7 +100,48 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		if from > to {
 			from, to = to, from // tolerate reversed input
 		}
-		if err := database.AddYearRange(gameId, from, to); err != nil {
+		ranges = append(ranges, database.TimelineTriviaYearRange{FromYear: from, ToYear: to})
+	}
+
+	// Safety check: cards to win must be realistic for what the selected
+	// decks/year ranges actually contain, before creating anything.
+	totalCards, err := database.CountCardsInDecksForRanges(deckIds, ranges)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to count cards for the selected decks"))
+		return
+	}
+	if err := database.ValidateCardsToWin(cardsToWin, totalCards); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(err.Error()))
+		return
+	}
+
+	// Create the lobby with game_type = 'timeline-trivia'
+	lobbyId, err := database.CreateTimelineTriviaLobby(name, password)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to create lobby"))
+		return
+	}
+
+	// Create the TimelineTrivia game
+	gameId, err := database.CreateTimelineTriviaGame(lobbyId, cardsToWin)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to create game"))
+		return
+	}
+
+	// Initialize draw pile with cards from decks (cards use authored years)
+	if err := database.InitializeTimelineTriviaDrawPile(gameId, deckIds); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to initialize draw pile"))
+		return
+	}
+
+	for _, rg := range ranges {
+		if err := database.AddYearRange(gameId, rg.FromYear, rg.ToYear); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte("failed to save year range"))
 			return
@@ -457,7 +467,7 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 
 	funcMap := template.FuncMap{
 		"add":        func(a, b int) int { return a + b },
-		"formatYear": formatYear,
+		"formatYear": database.FormatYear,
 	}
 
 	tmpl, err := template.New("timeline.html").Funcs(funcMap).ParseFS(

@@ -400,12 +400,14 @@ func TimelineTriviaLobbies(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		Decks []gsDatabase.Deck
+		Decks               []gsDatabase.Deck
+		MinCardsPerWinRatio int
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		Decks:        decks,
+		BasePageData:        basePageData,
+		Decks:               decks,
+		MinCardsPerWinRatio: database.MinCardsPerWinRatio,
 	})
 }
 
@@ -499,7 +501,11 @@ func TimelineTriviaLobby(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[ERROR TimelineTriviaLobby] Failed to get year ranges for game %s: %v", game.Id, err)
 	}
 
-	tmpl, err := template.ParseFS(
+	funcMap := template.FuncMap{
+		"formatYear": database.FormatYear,
+	}
+
+	tmpl, err := template.New("base.html").Funcs(funcMap).ParseFS(
 		static.StaticFiles,
 		"html/pages/base.html",
 		"html/pages/body/timeline-trivia.html",

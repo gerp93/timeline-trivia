@@ -44,7 +44,9 @@
                 max="20"
                 value="5"
                 required="required"
+                oninput="scheduleCardCountRecalc()"
             />
+            <span id="cards-to-win-warning" style="display: block; font-size: 0.85em; color: var(--color-accent-red, #f85149);"></span>
         </div>
         <br />
         <details>
@@ -92,7 +94,7 @@
             </button>
         </details>
         <br />
-        <input type="submit" value="Create Game" />
+        <input type="submit" id="createTimelineTriviaSubmit" value="Create Game" />
         <span class="htmx-result"></span>
     </form>
 </dialog>
@@ -110,6 +112,12 @@
 </template>
 
 <script>
+    // Minimum multiple of "cards to win" that the selected decks/year
+    // ranges must yield (see database.MinCardsPerWinRatio) — mirrored here
+    // from server-rendered data so the client-side warning matches what the
+    // server will actually enforce on submit.
+    const MIN_CARDS_PER_WIN_RATIO = {{.MinCardsPerWinRatio}};
+
     function addYearRangeRow() {
         const tmpl = document.getElementById("year-range-row-template");
         document.getElementById("year-range-rows").appendChild(tmpl.content.cloneNode(true));
@@ -136,6 +144,28 @@
         return `(${count} card${count === 1 ? "" : "s"})`;
     }
 
+    function checkCardsToWinSafety(total) {
+        const cardsToWinInput = document.getElementById("createTimelineTriviaCardsToWin");
+        const warningEl = document.getElementById("cards-to-win-warning");
+        const submitEl = document.getElementById("createTimelineTriviaSubmit");
+        const cardsToWin = parseInt(cardsToWinInput.value, 10);
+
+        if (Number.isNaN(cardsToWin)) {
+            if (warningEl) warningEl.textContent = "";
+            if (submitEl) submitEl.disabled = false;
+            return;
+        }
+
+        const minRequired = cardsToWin * MIN_CARDS_PER_WIN_RATIO;
+        const unsafe = total < minRequired;
+        if (warningEl) {
+            warningEl.textContent = unsafe
+                ? `Not enough cards: ${cardsToWin} to win needs at least ${minRequired} cards, only ${total} available.`
+                : "";
+        }
+        if (submitEl) submitEl.disabled = unsafe;
+    }
+
     async function fetchCardCount(params) {
         const response = await fetch("/api/timeline-trivia/card-count", {
             method: "POST",
@@ -159,6 +189,12 @@
                 const countEl = row.querySelector(".year-range-count");
                 if (countEl) countEl.textContent = "";
             });
+            // No decks selected yet is its own (server-enforced) problem —
+            // don't also warn about cards-to-win safety on top of it.
+            const warningEl = document.getElementById("cards-to-win-warning");
+            const submitEl = document.getElementById("createTimelineTriviaSubmit");
+            if (warningEl) warningEl.textContent = "";
+            if (submitEl) submitEl.disabled = false;
             return;
         }
 
@@ -178,6 +214,7 @@
         const total = await fetchCardCount(totalParams);
         if (myToken !== cardCountRecalcToken) return;
         if (totalEl) totalEl.textContent = cardCountLabel(total);
+        checkCardsToWinSafety(total);
 
         for (const row of rows) {
             const countEl = row.querySelector(".year-range-count");

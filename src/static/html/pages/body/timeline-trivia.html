@@ -18,7 +18,7 @@
         <div class="header-year-ranges">
             <span class="year-ranges-label">Years:</span>
             {{range .YearRanges}}
-            <span class="year-range-chip">{{.FromYear}}&ndash;{{.ToYear}}</span>
+            <span class="year-range-chip">{{formatYear .FromYear}}&ndash;{{formatYear .ToYear}}</span>
             {{end}}
         </div>
         {{end}}
