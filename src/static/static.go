@@ -15,6 +15,7 @@ var SQLFiles = []string{
 	"sql/tables/AUDIT_CARD.sql",
 	"sql/tables/TIMELINE_TRIVIA_GAME.sql",
 	"sql/tables/TIMELINE_TRIVIA_YEAR_RANGE.sql",
+	"sql/tables/TIMELINE_TRIVIA_CARD_ATTEMPT.sql",
 	"sql/tables/TIMELINE_TRIVIA_CURRENT_CARD.sql",
 	"sql/tables/TIMELINE_TRIVIA_DRAW_PILE.sql",
 	"sql/tables/TIMELINE_TRIVIA_PLAYER_TIMELINE.sql",

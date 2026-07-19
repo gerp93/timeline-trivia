@@ -3,6 +3,12 @@
     <div class="current-event-label">CURRENT EVENT</div>
     <div class="current-event-text">{{.CardText}}</div>
     <div class="current-event-hint">Where does this belong in your timeline?</div>
+    {{if .Attempts}}
+    <div class="current-event-missed">
+        Missed by:
+        {{range $i, $a := .Attempts}}{{if $i}}, {{end}}{{$a.PlayerName}}{{end}}
+    </div>
+    {{end}}
 </div>
 {{else}}
 <div class="current-event-banner current-event-empty">

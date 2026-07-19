@@ -254,56 +254,72 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Attempt to place the card
-	correct, err := database.PlaceCardInTimeline(game.Id, player.Id, position)
+	// Attempt to place the card (the "steal" mechanic: a miss doesn't end the
+	// round, it just passes the same card to the next player who hasn't
+	// tried it yet)
+	correct, roundExhausted, err := database.AttemptPlaceCardInTimeline(game.Id, player.Id, position)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
 		return
 	}
 
-	// Check for winner
-	winnerId, err := database.CheckTimelineTriviaWinner(game.Id)
-	if err == nil && winnerId != uuid.Nil {
-		// Game over!
-		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:You win!", player.Name))
-		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("You win!"))
-		return
-	}
-
-	// Always advance to next player after each turn
-	if err := database.AdvanceTimelineTriviaTurn(game.Id); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to advance turn"))
-		return
-	}
-
-	// Draw new card for next player
-	if err := database.DrawTimelineTriviaCard(game.Id); err != nil {
-		// No more cards - game over
-		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
-		w.WriteHeader(http.StatusOK)
-		if correct {
-			_, _ = w.Write([]byte("Correct! No more cards."))
-		} else {
-			_, _ = w.Write([]byte("Incorrect. No more cards."))
-		}
-		return
-	}
-
 	if correct {
+		// Check for winner
+		winnerId, err := database.CheckTimelineTriviaWinner(game.Id)
+		if err == nil && winnerId != uuid.Nil {
+			// Game over!
+			gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:You win!", player.Name))
+			gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("You win!"))
+			return
+		}
+
+		// Round resolved: next round starts with the next active player
+		// after this round's starter, and a fresh card is drawn.
+		if err := database.ResolveCardRound(game.Id); err != nil {
+			gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("Correct! No more cards."))
+			return
+		}
+
 		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:Correct!", player.Name))
 		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("Correct! Next player's turn."))
-	} else {
-		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:incorrect:Wrong!", player.Name))
+		_, _ = w.Write([]byte("Correct! Next round begins."))
+		return
+	}
+
+	if roundExhausted {
+		// Every active player missed this card; it's discarded. Next round
+		// starts with the next active player after this round's starter.
+		if err := database.ResolveCardRound(game.Id); err != nil {
+			gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("Incorrect. No more cards."))
+			return
+		}
+
+		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:incorrect:Wrong! Everyone missed — card discarded.", player.Name))
 		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("Incorrect. Next player's turn."))
+		_, _ = w.Write([]byte("Incorrect. Everyone missed — card discarded."))
+		return
 	}
+
+	// Hand the same card to the next active player who hasn't tried it yet
+	if err := database.AdvanceToNextGuesser(game.Id); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to advance to next guesser"))
+		return
+	}
+
+	gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:incorrect:Wrong! Next player can steal it.", player.Name))
+	gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("Incorrect. Next player can try to steal this card."))
 }
 
 // GetGameState returns the current game state HTML
@@ -477,6 +493,7 @@ func GetCurrentCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	currentCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
+	attempts, _ := database.GetCardAttempts(game.Id)
 
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
@@ -488,7 +505,15 @@ func GetCurrentCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = tmpl.Execute(w, currentCard)
+	type data struct {
+		database.TimelineTriviaCurrentCard
+		Attempts []database.TimelineTriviaCardAttempt
+	}
+
+	_ = tmpl.Execute(w, data{
+		TimelineTriviaCurrentCard: currentCard,
+		Attempts:                  attempts,
+	})
 }
 
 // GetDrawPileCount returns the number of cards remaining in the draw pile

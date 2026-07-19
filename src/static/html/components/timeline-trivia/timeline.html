@@ -8,16 +8,23 @@
         </div>
         <div class="timeline-horizontal">
             {{if eq (len $player.Timeline) 0}}
+            {{if and $player.HasAttempt (eq $player.AttemptedPosition 0)}}
+            <div class="timeline-card-box dummy-card-box" title="{{$player.PlayerName}} guessed here — incorrect">
+                <div class="card-year-badge">✗</div>
+                <div class="card-event-text">Guessed here</div>
+            </div>
+            {{else}}
             <div class="timeline-empty-state">
                 <p>No cards yet</p>
             </div>
+            {{end}}
             {{else}}
             <!-- Place Before first card (only for current player who is viewing, and game is active) -->
             {{if and $player.IsCurrent $player.IsMe (eq $.GameStatus "active")}}
             <div class="timeline-slot timeline-slot-end">
-                <button class="place-slot-button" 
-                        hx-post="/api/timeline-trivia/{{$.LobbyId}}/place-card" 
-                        hx-vals='{"position": 0}' 
+                <button class="place-slot-button"
+                        hx-post="/api/timeline-trivia/{{$.LobbyId}}/place-card"
+                        hx-vals='{"position": 0}'
                         hx-target="#timeline-trivia-message"
                         hx-swap="innerHTML">
                     <span class="slot-arrow">◀</span>
@@ -25,6 +32,12 @@
             </div>
             {{end}}
             {{range $index, $card := $player.Timeline}}
+            {{if and $player.HasAttempt (eq $player.AttemptedPosition $index)}}
+            <div class="timeline-card-box dummy-card-box" title="{{$player.PlayerName}} guessed here — incorrect">
+                <div class="card-year-badge">✗</div>
+                <div class="card-event-text">Guessed here</div>
+            </div>
+            {{end}}
             <div class="timeline-card-box">
                 <div class="card-year-badge">{{$card.CardYear}}</div>
                 <div class="card-event-text">{{$card.CardText}}</div>
@@ -32,9 +45,9 @@
             <!-- Place After this card (only for current player who is viewing, and game is active) -->
             {{if and $player.IsCurrent $player.IsMe (eq $.GameStatus "active")}}
             <div class="timeline-slot {{if eq (add $index 1) (len $player.Timeline)}}timeline-slot-end{{end}}">
-                <button class="place-slot-button" 
-                        hx-post="/api/timeline-trivia/{{$.LobbyId}}/place-card" 
-                        hx-vals='{"position": {{add $index 1}}}' 
+                <button class="place-slot-button"
+                        hx-post="/api/timeline-trivia/{{$.LobbyId}}/place-card"
+                        hx-vals='{"position": {{add $index 1}}}'
                         hx-target="#timeline-trivia-message"
                         hx-swap="innerHTML">
                     {{if eq (add $index 1) (len $player.Timeline)}}
@@ -45,6 +58,12 @@
                 </button>
             </div>
             {{end}}
+            {{end}}
+            {{if and $player.HasAttempt (eq $player.AttemptedPosition (len $player.Timeline))}}
+            <div class="timeline-card-box dummy-card-box" title="{{$player.PlayerName}} guessed here — incorrect">
+                <div class="card-year-badge">✗</div>
+                <div class="card-event-text">Guessed here</div>
+            </div>
             {{end}}
             {{end}}
         </div>

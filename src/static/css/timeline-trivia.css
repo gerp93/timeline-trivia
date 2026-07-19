@@ -139,6 +139,12 @@
     font-style: italic;
 }
 
+.current-event-missed {
+    margin-top: 6px;
+    font-size: 11px;
+    opacity: 0.9;
+}
+
 /* Turn Indicator */
 #timeline-trivia-turn-indicator {
     text-align: center;
@@ -249,6 +255,22 @@
     flex-direction: column;
     flex-shrink: 0;
     overflow: hidden;
+}
+
+.dummy-card-box {
+    border: 2px dashed var(--color-accent-red, #f85149);
+    background-color: transparent;
+    opacity: 0.85;
+}
+
+.dummy-card-box .card-year-badge {
+    background: none;
+    color: var(--color-accent-red, #f85149);
+    text-shadow: none;
+}
+
+.dummy-card-box .card-event-text {
+    color: var(--color-accent-red, #f85149);
 }
 
 .card-year-badge {
