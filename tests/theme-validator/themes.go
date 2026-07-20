@@ -2,17 +2,15 @@ package main
 
 import (
 	"log"
-	"os"
 	"regexp"
 	"sort"
 
-	"github.com/grantfbarnes/card-judge/tests/util"
+	gsStatic "github.com/gerp93/gameshell-framework/static"
 )
 
 // GetThemes returns all available theme class names by parsing colors.css
 func GetThemes() []string {
-	colorsCSS := getColorsCSSPath()
-	content, err := os.ReadFile(colorsCSS)
+	content, err := gsStatic.StaticFiles.ReadFile("css/colors.css")
 	if err != nil {
 		log.Fatalf("Failed to read colors.css: %v\n", err)
 	}
@@ -40,19 +38,8 @@ func GetThemes() []string {
 	sort.Strings(themes)
 
 	if len(themes) == 0 {
-		log.Fatalf("No themes found in %s\n", colorsCSS)
+		log.Fatalf("No themes found in colors.css\n")
 	}
 
 	return themes
-}
-
-// getColorsCSSPath finds the colors.css file
-func getColorsCSSPath() string {
-	return util.FindPath(
-		util.ColorsCSSPath,
-		"./"+util.ColorsCSSPath,
-		"../"+util.ColorsCSSPath,
-		"../../"+util.ColorsCSSPath,
-		"../../../"+util.ColorsCSSPath,
-	)
 }

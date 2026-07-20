@@ -13,7 +13,7 @@ import (
 	gsDatabase "github.com/gerp93/gameshell-framework/database"
 	"github.com/google/uuid"
 
-	"github.com/gerp93/card-timeline/database"
+	"github.com/gerp93/timeline-trivia/database"
 )
 
 // maxImportUploadBytes bounds how much request body an /card-import request

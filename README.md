@@ -12,18 +12,18 @@ original project for the platform this was built on.
 
 ```
 // MySQL/MariaDB
-CARD_TIMELINE_SQL_HOST // ip address of server
-CARD_TIMELINE_SQL_DATABASE // database name
-CARD_TIMELINE_SQL_USER // database username
-CARD_TIMELINE_SQL_PASSWORD // database username password
+TIMELINE_TRIVIA_SQL_HOST // ip address of server
+TIMELINE_TRIVIA_SQL_DATABASE // database name
+TIMELINE_TRIVIA_SQL_USER // database username
+TIMELINE_TRIVIA_SQL_PASSWORD // database username password
 
 // Port
-CARD_TIMELINE_PORT // [optional] port to serve (defaults to 2016)
+TIMELINE_TRIVIA_PORT // [optional] port to serve (defaults to 2016)
 
 // Redirect Logs
-CARD_TIMELINE_LOG_FILE // [optional] path to log file (defaults to stdout)
+TIMELINE_TRIVIA_LOG_FILE // [optional] path to log file (defaults to stdout)
 
 // HTTPS Certificates
-CARD_TIMELINE_CERT_FILE // [optional] path to cert file
-CARD_TIMELINE_KEY_FILE // [optional] path to key file
+TIMELINE_TRIVIA_CERT_FILE // [optional] path to cert file
+TIMELINE_TRIVIA_KEY_FILE // [optional] path to key file
 ```

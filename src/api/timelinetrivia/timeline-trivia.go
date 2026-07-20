@@ -12,8 +12,8 @@ import (
 	gsWebsocket "github.com/gerp93/gameshell-framework/websocket"
 	"github.com/google/uuid"
 
-	"github.com/gerp93/card-timeline/database"
-	"github.com/gerp93/card-timeline/static"
+	"github.com/gerp93/timeline-trivia/database"
+	"github.com/gerp93/timeline-trivia/static"
 )
 
 // TimelineTrivia deck ID

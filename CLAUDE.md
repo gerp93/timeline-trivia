@@ -22,16 +22,10 @@ optionally restrict the draw pile to one or more year ranges.
 Stack: **Go (stdlib `net/http`) + HTMX + `gorilla/websocket` + MariaDB.** No
 web framework, no ORM, no build step for the front end.
 
-> The GitHub repo was renamed from `card-timeline` to `timeline-trivia`, but
-> the Go module path (`github.com/gerp93/card-timeline`), directory name, and
-> internal identifiers were **not** renamed yet — that's a separate,
-> not-yet-done cleanup. Don't be surprised to see `card-timeline` inside the
-> code; don't silently rename it as a drive-by either.
-
 ## Layout
 
 The repo root is a thin wrapper. **All application code lives under `src/`,
-which is the Go module root** (`module github.com/gerp93/card-timeline`, Go
+which is the Go module root** (`module github.com/gerp93/timeline-trivia`, Go
 1.22.5). The reusable platform lives in the separate
 **`github.com/gerp93/gameshell-framework`** module (auth, page middleware,
 user/lobby-shell/player-base data layer, **deck management**, shared chat
@@ -43,7 +37,7 @@ src/
                          params, DB connect, framework schema then game
                          schema, ALL route wiring, server
   go.mod                 module + framework dependency (pinned version tag)
-  game/                  hooks.go — CardTimeline implements gameshell.Game
+  game/                  hooks.go — TimelineTrivia implements gameshell.Game
   api/                   game HTTP handlers, grouped by domain
     pages/                full-page renderers (package apiPages)
     user/ access/         packages apiUser, apiAccess
@@ -151,7 +145,7 @@ chip per active range — keep that in sync if the range shape changes.
 - **IDs** are `uuid.UUID` (`github.com/google/uuid`), generated with
   `uuid.NewUUID()` in Go or `UUID()` in SQL.
 - **Config** is environment variables via `os.Getenv`, all prefixed
-  `CARD_TIMELINE_` (`_SQL_HOST/_SQL_DATABASE/_SQL_USER/_SQL_PASSWORD`,
+  `TIMELINE_TRIVIA_` (`_SQL_HOST/_SQL_DATABASE/_SQL_USER/_SQL_PASSWORD`,
   `_PORT`, `_LOG_FILE`, `_CERT_FILE`, `_KEY_FILE`). No config files or
   libraries.
 
@@ -189,10 +183,10 @@ just started/reset.
 ## Build / run / verify
 
 - Build: `cd src && go build ./...`.
-- Run: needs a MariaDB reachable via the `CARD_TIMELINE_SQL_*` env vars;
+- Run: needs a MariaDB reachable via the `TIMELINE_TRIVIA_SQL_*` env vars;
   create the DB once with `src/static/sql/setup.sql`, then the server applies
   the rest of the schema (framework, then game) on startup. Serves on `:2016`
-  (or `CARD_TIMELINE_PORT`).
+  (or `TIMELINE_TRIVIA_PORT`).
 - Docker: root `Dockerfile` builds and runs the binary.
 - Versioning: `version_bump.sh {major|minor|patch}` (own version, tracked
   separately from `gameshell-framework` and card-judge).

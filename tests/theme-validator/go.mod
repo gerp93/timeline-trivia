@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/chromedp/chromedp v0.11.2
+	github.com/gerp93/gameshell-framework v0.3.0
 	github.com/grantfbarnes/card-judge/tests/setup v0.0.0
 	github.com/grantfbarnes/card-judge/tests/util v0.0.0
 	github.com/jung-kurt/gofpdf v1.16.2

@@ -11,8 +11,8 @@ import (
 	gsDatabase "github.com/gerp93/gameshell-framework/database"
 	"github.com/google/uuid"
 
-	"github.com/gerp93/card-timeline/database"
-	"github.com/gerp93/card-timeline/static"
+	"github.com/gerp93/timeline-trivia/database"
+	"github.com/gerp93/timeline-trivia/static"
 )
 
 func Home(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +84,15 @@ func Account(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = tmpl.ExecuteTemplate(w, "base", basePageData)
+	type data struct {
+		gsApi.BasePageData
+		ThemeGroups []gsApi.ThemeGroup
+	}
+
+	_ = tmpl.ExecuteTemplate(w, "base", data{
+		BasePageData: basePageData,
+		ThemeGroups:  gsApi.ThemeGroups,
+	})
 }
 
 func Users(w http.ResponseWriter, r *http.Request) {

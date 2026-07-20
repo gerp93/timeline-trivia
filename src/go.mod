@@ -1,9 +1,9 @@
-module github.com/gerp93/card-timeline
+module github.com/gerp93/timeline-trivia
 
 go 1.22.5
 
 require (
-	github.com/gerp93/gameshell-framework v0.2.0
+	github.com/gerp93/gameshell-framework v0.3.0
 	github.com/google/uuid v1.6.0
 )
 

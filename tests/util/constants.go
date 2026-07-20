@@ -56,7 +56,6 @@ const (
 // Directories
 const (
 	SQLDir                  = "src/static/sql"
-	ColorsCSSPath           = "src/static/css/colors.css"
 	ScreenshotDir           = "screenshots"
 	ThemeReportDir          = "theme-reports"
 	AccessibilityReportFile = "accessibility-report.txt"

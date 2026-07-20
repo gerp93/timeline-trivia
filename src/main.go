@@ -9,19 +9,19 @@ import (
 	gameshell "github.com/gerp93/gameshell-framework"
 	gsApi "github.com/gerp93/gameshell-framework/api"
 	gsApiDeck "github.com/gerp93/gameshell-framework/api/deck"
+	gsApiUser "github.com/gerp93/gameshell-framework/api/user"
 	gsAuth "github.com/gerp93/gameshell-framework/auth"
 	gsDatabase "github.com/gerp93/gameshell-framework/database"
 	gsStatic "github.com/gerp93/gameshell-framework/static"
 	gsWebsocket "github.com/gerp93/gameshell-framework/websocket"
 
-	apiAccess "github.com/gerp93/card-timeline/api/access"
-	apiCard "github.com/gerp93/card-timeline/api/card"
-	apiPages "github.com/gerp93/card-timeline/api/pages"
-	apiTimelineTrivia "github.com/gerp93/card-timeline/api/timelinetrivia"
-	apiUser "github.com/gerp93/card-timeline/api/user"
-	"github.com/gerp93/card-timeline/database"
-	"github.com/gerp93/card-timeline/game"
-	"github.com/gerp93/card-timeline/static"
+	apiAccess "github.com/gerp93/timeline-trivia/api/access"
+	apiCard "github.com/gerp93/timeline-trivia/api/card"
+	apiPages "github.com/gerp93/timeline-trivia/api/pages"
+	apiTimelineTrivia "github.com/gerp93/timeline-trivia/api/timelinetrivia"
+	"github.com/gerp93/timeline-trivia/database"
+	"github.com/gerp93/timeline-trivia/game"
+	"github.com/gerp93/timeline-trivia/static"
 )
 
 func main() {
@@ -31,7 +31,7 @@ func main() {
 		}
 	}()
 
-	gameshell.Register(game.CardTimeline{})
+	gameshell.Register(game.TimelineTrivia{})
 	gsApi.SetBrandName("Timeline Trivia")
 	gsAuth.SetCookiePrefix("CARD-TIMELINE")
 	gsApi.SetPagePolicy(gsApi.PagePolicy{
@@ -42,7 +42,7 @@ func main() {
 		},
 		AdminPaths: []string{"/users"},
 	})
-	gsDatabase.SetEnvPrefix("CARD_TIMELINE")
+	gsDatabase.SetEnvPrefix("TIMELINE_TRIVIA")
 
 	db, err := gsDatabase.CreateDatabaseConnection()
 	dbConnectAttemptCount := 0
@@ -111,17 +111,17 @@ func main() {
 	http.Handle("GET /timeline-trivia/{lobbyId}/access", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.TimelineTriviaLobbyAccess)))
 
 	// user
-	http.Handle("POST /api/user/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.Create)))
-	http.Handle("POST /api/user/create/admin", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.CreateAdmin)))
-	http.Handle("POST /api/user/login", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.Login)))
-	http.Handle("POST /api/user/logout", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.Logout)))
-	http.Handle("PUT /api/user/{userId}/name", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.SetName)))
-	http.Handle("PUT /api/user/{userId}/password", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.SetPassword)))
-	http.Handle("PUT /api/user/{userId}/password/reset", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.ResetPassword)))
-	http.Handle("PUT /api/user/{userId}/color-theme", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.SetColorTheme)))
-	http.Handle("PUT /api/user/{userId}/approve", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.Approve)))
-	http.Handle("PUT /api/user/{userId}/is-admin", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.SetIsAdmin)))
-	http.Handle("DELETE /api/user/{userId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiUser.Delete)))
+	http.Handle("POST /api/user/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.Create)))
+	http.Handle("POST /api/user/create/admin", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.CreateAdmin)))
+	http.Handle("POST /api/user/login", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.Login)))
+	http.Handle("POST /api/user/logout", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.Logout)))
+	http.Handle("PUT /api/user/{userId}/name", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.SetName)))
+	http.Handle("PUT /api/user/{userId}/password", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.SetPassword)))
+	http.Handle("PUT /api/user/{userId}/password/reset", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.ResetPassword)))
+	http.Handle("PUT /api/user/{userId}/color-theme", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.SetColorTheme)))
+	http.Handle("PUT /api/user/{userId}/approve", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.Approve)))
+	http.Handle("PUT /api/user/{userId}/is-admin", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.SetIsAdmin)))
+	http.Handle("DELETE /api/user/{userId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.Delete)))
 
 	// deck (framework-owned deck management)
 	http.Handle("POST /api/deck/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiDeck.Create)))
@@ -157,8 +157,8 @@ func main() {
 	// websocket
 	http.HandleFunc("GET /ws/lobby/{lobbyId}", gsWebsocket.ServeWs)
 
-	if os.Getenv("CARD_TIMELINE_LOG_FILE") != "" {
-		logFile, err := os.OpenFile(os.Getenv("CARD_TIMELINE_LOG_FILE"), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if os.Getenv("TIMELINE_TRIVIA_LOG_FILE") != "" {
+		logFile, err := os.OpenFile(os.Getenv("TIMELINE_TRIVIA_LOG_FILE"), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -167,13 +167,13 @@ func main() {
 	}
 
 	port := ":2016"
-	if os.Getenv("CARD_TIMELINE_PORT") != "" {
-		port = ":" + os.Getenv("CARD_TIMELINE_PORT")
+	if os.Getenv("TIMELINE_TRIVIA_PORT") != "" {
+		port = ":" + os.Getenv("TIMELINE_TRIVIA_PORT")
 	}
 
 	log.Println("server is running...")
-	if os.Getenv("CARD_TIMELINE_CERT_FILE") != "" && os.Getenv("CARD_TIMELINE_KEY_FILE") != "" {
-		err = http.ListenAndServeTLS(port, os.Getenv("CARD_TIMELINE_CERT_FILE"), os.Getenv("CARD_TIMELINE_KEY_FILE"), nil)
+	if os.Getenv("TIMELINE_TRIVIA_CERT_FILE") != "" && os.Getenv("TIMELINE_TRIVIA_KEY_FILE") != "" {
+		err = http.ListenAndServeTLS(port, os.Getenv("TIMELINE_TRIVIA_CERT_FILE"), os.Getenv("TIMELINE_TRIVIA_KEY_FILE"), nil)
 	} else {
 		err = http.ListenAndServe(port, nil)
 	}
