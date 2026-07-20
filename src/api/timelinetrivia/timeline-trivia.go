@@ -290,7 +290,7 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		if err == nil && winnerId != uuid.Nil {
 			// Game over!
 			gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:You win!", player.Name))
-			gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
+			gsWebsocket.LobbyBroadcast(lobbyId, "reload")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("You win!"))
 			return
