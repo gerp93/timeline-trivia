@@ -14,6 +14,9 @@
             <button onclick="window.location.href='/decks'">Card Decks</button>
         </div>
         <div>
+            <button onclick="window.location.href='/stats'">Statistics</button>
+        </div>
+        <div>
             <button onclick="window.location.href='/account'">Account</button>
         </div>
         {{else}}
@@ -27,6 +30,9 @@
         {{if .User.IsAdmin}}
         <div>
             <button onclick="window.location.href='/users'">Users</button>
+        </div>
+        <div>
+            <button onclick="window.location.href='/categories'">Categories</button>
         </div>
         {{end}}
     </div>

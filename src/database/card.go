@@ -14,9 +14,11 @@ type Card struct {
 	CreatedOnDate time.Time
 	ChangedOnDate time.Time
 
-	DeckId uuid.UUID
-	Text   string
-	Year   sql.NullInt64
+	DeckId       uuid.UUID
+	Text         string
+	Year         sql.NullInt64
+	CategoryId   uuid.NullUUID
+	CategoryName sql.NullString
 }
 
 func SearchCardsInDeck(deckId uuid.UUID, text string, page int) ([]Card, error) {
@@ -28,16 +30,19 @@ func SearchCardsInDeck(deckId uuid.UUID, text string, page int) ([]Card, error) 
 
 	sqlString := `
 		SELECT
-			ID,
-			CREATED_ON_DATE,
-			CHANGED_ON_DATE,
-			DECK_ID,
-			TEXT,
-			CARD_YEAR
-		FROM CARD
-		WHERE DECK_ID = ?
-			AND TEXT LIKE ?
-		ORDER BY CARD_YEAR, TEXT
+			C.ID,
+			C.CREATED_ON_DATE,
+			C.CHANGED_ON_DATE,
+			C.DECK_ID,
+			C.TEXT,
+			C.CARD_YEAR,
+			C.CATEGORY_ID,
+			TC.NAME
+		FROM CARD AS C
+			LEFT JOIN TIMELINE_TRIVIA_CATEGORY AS TC ON TC.ID = C.CATEGORY_ID
+		WHERE C.DECK_ID = ?
+			AND C.TEXT LIKE ?
+		ORDER BY C.CARD_YEAR, C.TEXT
 		LIMIT 10 OFFSET ?
 	`
 	rows, err := query(sqlString, deckId, text, (page-1)*10)
@@ -55,7 +60,9 @@ func SearchCardsInDeck(deckId uuid.UUID, text string, page int) ([]Card, error) 
 			&card.ChangedOnDate,
 			&card.DeckId,
 			&card.Text,
-			&card.Year); err != nil {
+			&card.Year,
+			&card.CategoryId,
+			&card.CategoryName); err != nil {
 			log.Println(err)
 			return nil, errors.New("failed to scan row in query results")
 		}
@@ -96,14 +103,17 @@ func GetCard(id uuid.UUID) (Card, error) {
 
 	sqlString := `
 		SELECT
-			ID,
-			CREATED_ON_DATE,
-			CHANGED_ON_DATE,
-			DECK_ID,
-			TEXT,
-			CARD_YEAR
-		FROM CARD
-		WHERE ID = ?
+			C.ID,
+			C.CREATED_ON_DATE,
+			C.CHANGED_ON_DATE,
+			C.DECK_ID,
+			C.TEXT,
+			C.CARD_YEAR,
+			C.CATEGORY_ID,
+			TC.NAME
+		FROM CARD AS C
+			LEFT JOIN TIMELINE_TRIVIA_CATEGORY AS TC ON TC.ID = C.CATEGORY_ID
+		WHERE C.ID = ?
 	`
 	rows, err := query(sqlString, id)
 	if err != nil {
@@ -118,7 +128,9 @@ func GetCard(id uuid.UUID) (Card, error) {
 			&card.ChangedOnDate,
 			&card.DeckId,
 			&card.Text,
-			&card.Year); err != nil {
+			&card.Year,
+			&card.CategoryId,
+			&card.CategoryName); err != nil {
 			log.Println(err)
 			return card, errors.New("failed to scan row in query results")
 		}
@@ -153,7 +165,7 @@ func GetCardId(deckId uuid.UUID, text string) (uuid.UUID, error) {
 	return id, nil
 }
 
-func CreateCard(deckId uuid.UUID, text string, year sql.NullInt64) (uuid.UUID, error) {
+func CreateCard(deckId uuid.UUID, text string, year sql.NullInt64, categoryId uuid.NullUUID) (uuid.UUID, error) {
 	id, err := uuid.NewUUID()
 	if err != nil {
 		log.Println(err)
@@ -161,20 +173,21 @@ func CreateCard(deckId uuid.UUID, text string, year sql.NullInt64) (uuid.UUID, e
 	}
 
 	sqlString := `
-		INSERT INTO CARD(ID, DECK_ID, TEXT, CARD_YEAR)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO CARD(ID, DECK_ID, TEXT, CARD_YEAR, CATEGORY_ID)
+		VALUES (?, ?, ?, ?, ?)
 	`
-	return id, execute(sqlString, id, deckId, text, year)
+	return id, execute(sqlString, id, deckId, text, year, categoryId)
 }
 
-func UpdateCard(id uuid.UUID, text string, year sql.NullInt64) error {
+func UpdateCard(id uuid.UUID, text string, year sql.NullInt64, categoryId uuid.NullUUID) error {
 	sqlString := `
 		UPDATE CARD
 		SET TEXT = ?,
-			CARD_YEAR = ?
+			CARD_YEAR = ?,
+			CATEGORY_ID = ?
 		WHERE ID = ?
 	`
-	return execute(sqlString, text, year, id)
+	return execute(sqlString, text, year, categoryId, id)
 }
 
 func DeleteCard(id uuid.UUID) error {
@@ -191,23 +204,26 @@ func DeleteCard(id uuid.UUID) error {
 // not fire the CARD delete trigger when the framework deletes the deck.
 func AuditDeckCardsAsDeleted(deckId uuid.UUID) error {
 	sqlString := `
-		INSERT INTO AUDIT_CARD(AUDIT_TYPE, CARD_ID, DECK_ID, TEXT, CARD_YEAR)
-		SELECT 'DELETE', ID, DECK_ID, TEXT, CARD_YEAR
+		INSERT INTO AUDIT_CARD(AUDIT_TYPE, CARD_ID, DECK_ID, TEXT, CARD_YEAR, CATEGORY_ID)
+		SELECT 'DELETE', ID, DECK_ID, TEXT, CARD_YEAR, CATEGORY_ID
 		FROM CARD
 		WHERE DECK_ID = ?
 	`
 	return execute(sqlString, deckId)
 }
 
-// GetCardsInDeckExport returns a deck's cards for CSV export (text, year).
+// GetCardsInDeckExport returns a deck's cards for CSV export (text, year,
+// category name).
 func GetCardsInDeckExport(deckId uuid.UUID) ([]Card, error) {
 	sqlString := `
 		SELECT
-			TEXT,
-			CARD_YEAR
-		FROM CARD
-		WHERE DECK_ID = ?
-		ORDER BY CARD_YEAR, TEXT
+			C.TEXT,
+			C.CARD_YEAR,
+			TC.NAME
+		FROM CARD AS C
+			LEFT JOIN TIMELINE_TRIVIA_CATEGORY AS TC ON TC.ID = C.CATEGORY_ID
+		WHERE C.DECK_ID = ?
+		ORDER BY C.CARD_YEAR, C.TEXT
 	`
 	rows, err := query(sqlString, deckId)
 	if err != nil {
@@ -218,7 +234,7 @@ func GetCardsInDeckExport(deckId uuid.UUID) ([]Card, error) {
 	result := make([]Card, 0)
 	for rows.Next() {
 		var card Card
-		if err := rows.Scan(&card.Text, &card.Year); err != nil {
+		if err := rows.Scan(&card.Text, &card.Year, &card.CategoryName); err != nil {
 			log.Println(err)
 			return nil, errors.New("failed to scan row in query results")
 		}

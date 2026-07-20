@@ -79,12 +79,14 @@ No cards found with that search criteria.
             <th>Changed</th>
             <th>Edit</th>
             <th>Year</th>
+            <th>Category</th>
             <th>Text</th>
             <th>Delete</th>
         </tr>
     </thead>
     <tbody>
         {{range .Cards}}
+        {{$card := .}}
         <tr>
             <td>{{.CreatedOnDate.Format "2006-01-02"}}</td>
             <td>{{.ChangedOnDate.Format "2006-01-02"}}</td>
@@ -128,6 +130,21 @@ No cards found with that search criteria.
                                 {{if .Year.Valid}}value="{{.Year.Int64}}"{{end}}
                                 autocomplete="off"
                             />
+                            <label for="category{{.Id}}">Category</label>
+                            <select
+                                id="category{{.Id}}"
+                                name="categoryId"
+                                required="required"
+                                autocomplete="off"
+                            >
+                                <option value="">-- Select a Category --</option>
+                                {{range $.Categories}}
+                                <option
+                                    value="{{.Id}}"
+                                    {{if and $card.CategoryId.Valid (eq (printf "%s" .Id) (printf "%s" $card.CategoryId.UUID))}}selected{{end}}
+                                >{{.Name}}</option>
+                                {{end}}
+                            </select>
                             <label
                                 for="text{{.Id}}"
                                 style="vertical-align: top"
@@ -152,6 +169,7 @@ No cards found with that search criteria.
                 </dialog>
             </td>
             <td>{{if .Year.Valid}}{{.Year.Int64}}{{else}}<em>none</em>{{end}}</td>
+            <td>{{if .CategoryName.Valid}}{{.CategoryName.String}}{{else}}<em>none</em>{{end}}</td>
             <td class="wrap-new-lines">{{.Text}}</td>
             <td>
                 <div style="text-align: center;">
@@ -335,6 +353,18 @@ No cards found with that search criteria.
                 placeholder="Enter Year"
                 autocomplete="off"
             />
+            <label for="newCardCategory">Category</label>
+            <select
+                id="newCardCategory"
+                name="categoryId"
+                required="required"
+                autocomplete="off"
+            >
+                <option value="">-- Select a Category --</option>
+                {{range .Categories}}
+                <option value="{{.Id}}">{{.Name}}</option>
+                {{end}}
+            </select>
             <label
                 for="newCardText"
                 style="vertical-align: top"

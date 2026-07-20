@@ -1,0 +1,43 @@
+{{define "body"}}
+<div style="display: grid; grid-auto-flow: column">
+    <h2>Leaderboard</h2>
+    <div style="text-align: right;">
+        <button onclick="window.location.href='/stats'">Statistics Home</button>
+    </div>
+</div>
+<p>Ranked by games won, then guess accuracy. Guess numbers count public decks only.</p>
+{{if eq (len .Entries) 0}}
+<p>No games have been played yet.</p>
+{{else}}
+<table>
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Player</th>
+            <th>Games Won</th>
+            <th>Correct Guesses</th>
+            <th>Total Guesses</th>
+            <th>Accuracy</th>
+            <th>Stats</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .Entries}}
+        <tr>
+            <td>{{.Rank}}</td>
+            <td class="wrap-new-lines">{{.Name}}</td>
+            <td>{{.GamesWon}}</td>
+            <td>{{.CorrectGuesses}}</td>
+            <td>{{.TotalGuesses}}</td>
+            <td>{{printf "%.0f%%" .Accuracy}}</td>
+            <td>
+                <div style="text-align: center;">
+                    <a href="/stats/user/{{.UserId}}"><button>View</button></a>
+                </div>
+            </td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{end}}
+{{end}}

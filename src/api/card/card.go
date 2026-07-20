@@ -35,6 +35,28 @@ func parseYear(value string) (sql.NullInt64, bool) {
 	return sql.NullInt64{Int64: int64(year), Valid: true}, true
 }
 
+// parseCategoryId parses the required categoryId form value and confirms it is
+// one of the predefined categories. Returns a non-empty error message on any
+// problem (missing, malformed, or unknown category).
+func parseCategoryId(value string) (uuid.NullUUID, string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return uuid.NullUUID{}, "A category is required."
+	}
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return uuid.NullUUID{}, "Invalid category."
+	}
+	exists, err := database.CategoryExists(id)
+	if err != nil {
+		return uuid.NullUUID{}, "Failed to check category."
+	}
+	if !exists {
+		return uuid.NullUUID{}, "Selected category does not exist."
+	}
+	return uuid.NullUUID{UUID: id, Valid: true}, ""
+}
+
 func hasDeckAccess(w http.ResponseWriter, r *http.Request, deckId uuid.UUID) bool {
 	userId := gsApi.GetUserId(r)
 	if userId == uuid.Nil {
@@ -88,6 +110,13 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	categoryId, categoryErr := parseCategoryId(r.FormValue("categoryId"))
+	if categoryErr != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(categoryErr))
+		return
+	}
+
 	existingCardId, err := database.GetCardId(deckId, text)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -100,7 +129,7 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := database.CreateCard(deckId, text, year); err != nil {
+	if _, err := database.CreateCard(deckId, text, year, categoryId); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
 		return
@@ -149,7 +178,14 @@ func Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.UpdateCard(cardId, text, year); err != nil {
+	categoryId, categoryErr := parseCategoryId(r.FormValue("categoryId"))
+	if categoryErr != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(categoryErr))
+		return
+	}
+
+	if err := database.UpdateCard(cardId, text, year, categoryId); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(err.Error()))
 		return
@@ -215,7 +251,11 @@ func GetCardExport(w http.ResponseWriter, r *http.Request) {
 		if card.Year.Valid {
 			year = strconv.FormatInt(card.Year.Int64, 10)
 		}
-		_ = writer.Write([]string{card.Text, year})
+		category := ""
+		if card.CategoryName.Valid {
+			category = card.CategoryName.String
+		}
+		_ = writer.Write([]string{card.Text, year, category})
 	}
 }
 

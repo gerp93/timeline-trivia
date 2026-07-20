@@ -1,0 +1,40 @@
+{{define "body"}}
+<h2>Statistics</h2>
+<div id="home-buttons" style="margin-bottom: 1em;">
+    <div>
+        <button onclick="window.location.href='/stats/user/{{.SelfUserId}}'">My Stats</button>
+    </div>
+    <div>
+        <button onclick="window.location.href='/stats/leaderboard'">Leaderboard</button>
+    </div>
+    <div>
+        <button onclick="window.location.href='/stats/users'">Player Stats</button>
+    </div>
+    <div>
+        <button onclick="window.location.href='/stats/cards'">Card Stats</button>
+    </div>
+</div>
+
+<h3>Most-Played Decades</h3>
+<p>Decades whose events come up most often to guess, across the decks you can see.</p>
+{{if eq (len .TopDecades) 0}}
+<p>No cards have been played yet.</p>
+{{else}}
+<table>
+    <thead>
+        <tr>
+            <th>Decade</th>
+            <th>Times Played</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .TopDecades}}
+        <tr>
+            <td>{{.Label}}</td>
+            <td>{{.DrawCount}}</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{end}}
+{{end}}

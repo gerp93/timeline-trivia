@@ -3,6 +3,7 @@ package apiTimelineTrivia
 import (
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -274,6 +275,11 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Capture the card being guessed before the attempt resolves and clears
+	// the current card, so the guess can be logged for stats regardless of the
+	// outcome.
+	guessedCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
+
 	// Attempt to place the card (the "steal" mechanic: a miss doesn't end the
 	// round, it just passes the same card to the next player who hasn't
 	// tried it yet)
@@ -284,11 +290,21 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log the guess for stats (non-fatal to gameplay on failure).
+	if guessedCard.CardId != uuid.Nil {
+		if logErr := database.LogGuess(userId, guessedCard.CardId, guessedCard.CardYear, correct); logErr != nil {
+			log.Println(logErr)
+		}
+	}
+
 	if correct {
 		// Check for winner
 		winnerId, err := database.CheckTimelineTriviaWinner(game.Id)
 		if err == nil && winnerId != uuid.Nil {
-			// Game over!
+			// Game over! Record the win for stats (non-fatal on failure).
+			if logErr := database.LogWin(winnerId); logErr != nil {
+				log.Println(logErr)
+			}
 			gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:You win!", player.Name))
 			gsWebsocket.LobbyBroadcast(lobbyId, "reload")
 			w.WriteHeader(http.StatusOK)
@@ -317,6 +333,13 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		// year it actually was before ResolveCardRound clears the current
 		// card and draws the next one.
 		revealedCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
+
+		// Record the discard for stats (non-fatal on failure).
+		if revealedCard.CardId != uuid.Nil {
+			if logErr := database.LogCardDiscard(revealedCard.CardId); logErr != nil {
+				log.Println(logErr)
+			}
+		}
 
 		// Next round starts with the next active player after this round's
 		// starter.

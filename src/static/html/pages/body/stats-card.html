@@ -1,0 +1,48 @@
+{{define "body"}}
+<div style="display: grid; grid-auto-flow: column">
+    <h2>Card Stats</h2>
+    <div style="text-align: right;">
+        <button onclick="window.location.href='/stats'">Statistics Home</button>
+        <button onclick="window.location.href='/stats/cards'">Other Cards</button>
+    </div>
+</div>
+
+<table>
+    <tbody>
+        <tr>
+            <td>Event</td>
+            <td class="wrap-new-lines">{{.Stat.Text}}</td>
+        </tr>
+        <tr>
+            <td>Year</td>
+            <td>{{.Stat.YearLabel}}</td>
+        </tr>
+        <tr>
+            <td>Category</td>
+            <td>{{if .Stat.CategoryName.Valid}}{{.Stat.CategoryName.String}}{{else}}<em>none</em>{{end}}</td>
+        </tr>
+        <tr>
+            <td>Deck</td>
+            <td>{{.Stat.DeckName}}</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Play Record</h3>
+<table>
+    <tbody>
+        <tr>
+            <td>Times Played (drawn to guess)</td>
+            <td>{{.Stat.DrawCount}}</td>
+        </tr>
+        <tr>
+            <td>Wrong Guesses Received</td>
+            <td>{{.Stat.WrongCount}}</td>
+        </tr>
+        <tr>
+            <td>Times Discarded (nobody got it)</td>
+            <td>{{.Stat.DiscardCount}}</td>
+        </tr>
+    </tbody>
+</table>
+{{end}}

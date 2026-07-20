@@ -95,6 +95,39 @@ func Account(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func Categories(w http.ResponseWriter, r *http.Request) {
+	basePageData := gsApi.GetBasePageData(r)
+	basePageData.PageTitle = "Timeline Trivia - Categories"
+
+	categories, err := database.GetCategoriesWithCounts()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get categories"))
+		return
+	}
+
+	tmpl, err := template.ParseFS(
+		static.StaticFiles,
+		"html/pages/base.html",
+		"html/pages/body/categories.html",
+	)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to parse HTML"))
+		return
+	}
+
+	type data struct {
+		gsApi.BasePageData
+		Categories []database.CategoryWithCount
+	}
+
+	_ = tmpl.ExecuteTemplate(w, "base", data{
+		BasePageData: basePageData,
+		Categories:   categories,
+	})
+}
+
 func Users(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Timeline Trivia - Users"
@@ -296,6 +329,13 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	categories, err := database.GetCategories()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get categories"))
+		return
+	}
+
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
 		"html/pages/base.html",
@@ -309,12 +349,13 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		Deck     gsDatabase.Deck
-		Text     string
-		Page     int
-		LastPage int
-		RowCount int
-		Cards    []database.Card
+		Deck       gsDatabase.Deck
+		Text       string
+		Page       int
+		LastPage   int
+		RowCount   int
+		Cards      []database.Card
+		Categories []database.Category
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
@@ -325,6 +366,7 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 		LastPage:     totalPageCount,
 		RowCount:     totalRowCount,
 		Cards:        cards,
+		Categories:   categories,
 	})
 }
 

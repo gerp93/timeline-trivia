@@ -1,0 +1,119 @@
+{{define "body"}}
+<div style="display: grid; grid-auto-flow: column">
+    <h2>{{.Stat.Name}}</h2>
+    <div style="text-align: right;">
+        <button onclick="window.location.href='/stats'">Statistics Home</button>
+        <button onclick="window.location.href='/stats/users'">Other Players</button>
+    </div>
+</div>
+
+<h3>Overall</h3>
+<table>
+    <tbody>
+        <tr>
+            <td>Games Won</td>
+            <td>{{.Stat.GamesWon}}</td>
+        </tr>
+        <tr>
+            <td>Correct Guesses</td>
+            <td>{{.Stat.CorrectGuesses}}</td>
+        </tr>
+        <tr>
+            <td>Total Guesses</td>
+            <td>{{.Stat.TotalGuesses}}</td>
+        </tr>
+        <tr>
+            <td>Accuracy</td>
+            <td>{{printf "%.0f%%" .Stat.Accuracy}}</td>
+        </tr>
+    </tbody>
+</table>
+
+<h3>Decades Guessed Most Often</h3>
+{{if eq (len .MostOften) 0}}
+<p>No guesses recorded yet.</p>
+{{else}}
+<table>
+    <thead>
+        <tr><th>Decade</th><th>Guesses</th><th>Correct</th><th>Accuracy</th></tr>
+    </thead>
+    <tbody>
+        {{range .MostOften}}
+        <tr>
+            <td>{{.Label}}</td>
+            <td>{{.Attempts}}</td>
+            <td>{{.Correct}}</td>
+            <td>{{printf "%.0f%%" .Rate}}</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{end}}
+
+<h3>Best &amp; Worst Decades</h3>
+<p>
+    Ranked by accuracy, counting only decades with at least
+    {{.MinDecadeGuesses}} guesses so a lucky few don't skew the ranking.
+</p>
+{{if not .HasQualified}}
+<p><em>Not enough guesses in any one decade yet &mdash; keep playing!</em></p>
+{{else}}
+<div style="display: grid; grid-auto-flow: column; gap: 2em;">
+    <div>
+        <h4>Most Successful</h4>
+        <table>
+            <thead>
+                <tr><th>Decade</th><th>Accuracy</th><th>Guesses</th></tr>
+            </thead>
+            <tbody>
+                {{range .MostSuccessful}}
+                <tr>
+                    <td>{{.Label}}</td>
+                    <td>{{printf "%.0f%%" .Rate}}</td>
+                    <td>{{.Correct}}/{{.Attempts}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    <div>
+        <h4>Least Successful</h4>
+        <table>
+            <thead>
+                <tr><th>Decade</th><th>Accuracy</th><th>Guesses</th></tr>
+            </thead>
+            <tbody>
+                {{range .LeastSuccessful}}
+                <tr>
+                    <td>{{.Label}}</td>
+                    <td>{{printf "%.0f%%" .Rate}}</td>
+                    <td>{{.Correct}}/{{.Attempts}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{end}}
+
+<h3>Categories</h3>
+{{if eq (len .Categories) 0}}
+<p>No categorized guesses recorded yet.</p>
+{{else}}
+<table>
+    <thead>
+        <tr><th>Category</th><th>Accuracy</th><th>Correct</th><th>Guesses</th></tr>
+    </thead>
+    <tbody>
+        {{range .Categories}}
+        <tr>
+            <td>{{.Name}}</td>
+            <td>{{printf "%.0f%%" .Rate}}</td>
+            <td>{{.Correct}}</td>
+            <td>{{.Attempts}}</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{end}}
+{{end}}

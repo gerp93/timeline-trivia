@@ -17,6 +17,7 @@ import (
 
 	apiAccess "github.com/gerp93/timeline-trivia/api/access"
 	apiCard "github.com/gerp93/timeline-trivia/api/card"
+	apiCategory "github.com/gerp93/timeline-trivia/api/category"
 	apiPages "github.com/gerp93/timeline-trivia/api/pages"
 	apiTimelineTrivia "github.com/gerp93/timeline-trivia/api/timelinetrivia"
 	"github.com/gerp93/timeline-trivia/database"
@@ -35,12 +36,13 @@ func main() {
 	gsApi.SetBrandName("Timeline Trivia")
 	gsAuth.SetCookiePrefix("CARD-TIMELINE")
 	gsApi.SetPagePolicy(gsApi.PagePolicy{
-		LoginPaths: []string{"/account", "/users"},
+		LoginPaths: []string{"/account", "/users", "/categories", "/stats"},
 		LoginPathPrefixes: []string{
 			"/deck/",
 			"/timeline-trivia/",
+			"/stats/",
 		},
-		AdminPaths: []string{"/users"},
+		AdminPaths: []string{"/users", "/categories"},
 	})
 	gsDatabase.SetEnvPrefix("TIMELINE_TRIVIA")
 
@@ -80,13 +82,23 @@ func main() {
 	}
 
 	// Seed a default deck from the embedded starter data, but only if the
-	// database has no decks yet.
+	// database has no decks yet. Categories are seeded first (independently of
+	// deck seeding, so an existing database still gets its base category list),
+	// then any pre-category cards in the default deck get backfilled by text.
 	defaultDeckJSON, err := static.StaticFiles.ReadFile("data/default-deck.json")
 	if err != nil {
 		log.Fatalln(err)
 		return
 	}
+	if err := database.SeedCategoriesIfEmpty(defaultDeckJSON); err != nil {
+		log.Fatalln(err)
+		return
+	}
 	if err := database.SeedDefaultDeckIfEmpty(defaultDeckJSON); err != nil {
+		log.Fatalln(err)
+		return
+	}
+	if err := database.BackfillDefaultDeckCategories(defaultDeckJSON); err != nil {
 		log.Fatalln(err)
 		return
 	}
@@ -101,9 +113,18 @@ func main() {
 	http.Handle("GET /login", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Login)))
 	http.Handle("GET /account", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Account)))
 	http.Handle("GET /users", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Users)))
+	http.Handle("GET /categories", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Categories)))
 	http.Handle("GET /decks", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Decks)))
 	http.Handle("GET /deck/{deckId}", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Deck)))
 	http.Handle("GET /deck/{deckId}/access", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.DeckAccess)))
+
+	// stats pages
+	http.Handle("GET /stats", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Stats)))
+	http.Handle("GET /stats/leaderboard", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.StatsLeaderboard)))
+	http.Handle("GET /stats/users", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.StatsUsers)))
+	http.Handle("GET /stats/user/{userId}", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.StatsUser)))
+	http.Handle("GET /stats/cards", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.StatsCards)))
+	http.Handle("GET /stats/card/{cardId}", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.StatsCard)))
 
 	// timeline-trivia pages
 	http.Handle("GET /timeline-trivia/lobbies", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.TimelineTriviaLobbies)))
@@ -136,6 +157,12 @@ func main() {
 	http.Handle("POST /api/card/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Create)))
 	http.Handle("PUT /api/card/{cardId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Update)))
 	http.Handle("DELETE /api/card/{cardId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Delete)))
+
+	// category (game-owned; admin-managed predefined list, checked in-handler).
+	// Delete-with-reassign is a POST (not DELETE) because it carries a form
+	// body — Go's ParseForm only reads the body for POST/PUT/PATCH.
+	http.Handle("POST /api/category/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCategory.Create)))
+	http.Handle("POST /api/category/{categoryId}/delete", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCategory.DeleteReassign)))
 
 	// timeline-trivia
 	http.Handle("POST /api/timeline-trivia/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.Create)))

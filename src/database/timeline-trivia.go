@@ -395,7 +395,20 @@ func DrawTimelineTriviaCard(gameId uuid.UUID) error {
 		WHERE TIMELINE_TRIVIA_GAME_ID = ?
 		AND CARD_ID = (SELECT CARD_ID FROM TIMELINE_TRIVIA_CURRENT_CARD WHERE TIMELINE_TRIVIA_GAME_ID = ?)
 	`
-	return execute(sqlMark, gameId, gameId)
+	if err := execute(sqlMark, gameId, gameId); err != nil {
+		return err
+	}
+
+	// Log the draw for stats (a card became the event to guess). Only when a
+	// card was actually drawn — the draw pile may be exhausted, in which case
+	// there is no current card. Logging failures are non-fatal to gameplay.
+	if current, err := GetTimelineTriviaCurrentCard(gameId); err == nil && current.CardId != uuid.Nil {
+		if logErr := LogCardDraw(current.CardId); logErr != nil {
+			log.Println(logErr)
+		}
+	}
+
+	return nil
 }
 
 // GetTimelineTriviaCurrentCard gets the current card being played

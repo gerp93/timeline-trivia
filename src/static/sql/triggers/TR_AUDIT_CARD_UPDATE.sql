@@ -8,13 +8,15 @@ BEGIN
         CARD_ID,
         DECK_ID,
         TEXT,
-        CARD_YEAR
+        CARD_YEAR,
+        CATEGORY_ID
     )
     VALUES (
         'UPDATE',
         OLD.ID,
         OLD.DECK_ID,
         OLD.TEXT,
-        OLD.CARD_YEAR
+        OLD.CARD_YEAR,
+        OLD.CATEGORY_ID
     );
 END;

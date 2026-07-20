@@ -1,0 +1,76 @@
+{{define "body"}}
+<div style="display: grid; grid-auto-flow: column">
+    <h2>Player Stats</h2>
+    <div style="text-align: right;">
+        <button onclick="window.location.href='/stats'">Statistics Home</button>
+    </div>
+</div>
+<p>Pick a player to see their detailed stats.</p>
+<form id="table-filter-form">
+    <label for="nameSearch">Search:</label>
+    <input
+        type="search"
+        id="nameSearch"
+        name="name"
+        maxlength="510"
+        placeholder="Search..."
+        value="{{.Name}}"
+        autocomplete="off"
+        onchange="submitTableFilterForm()"
+    />
+
+    {{if gt .Page 1}}
+    <button onclick="goToTablePage(1)">
+        <span class="bi bi-chevron-bar-left"></span>
+    </button>
+    <button onclick="goToPreviousTablePage()">
+        <span class="bi bi-chevron-left"></span>
+    </button>
+    {{end}}
+
+    <span>
+        Page <input
+            type="number"
+            id="pageNumber"
+            name="page"
+            min="1"
+            max="{{.LastPage}}"
+            value="{{.Page}}"
+            onchange="submitTableFilterForm()"
+        /> of {{.LastPage}}
+    </span>
+
+    {{if lt .Page .LastPage}}
+    <button onclick="goToNextTablePage()">
+        <span class="bi bi-chevron-right"></span>
+    </button>
+    <button onclick="goToTablePage({{.LastPage}})">
+        <span class="bi bi-chevron-bar-right"></span>
+    </button>
+    {{end}}
+</form>
+{{if eq .RowCount 0}}
+No players found with that search criteria.
+{{else}}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Stats</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .Users}}
+        <tr>
+            <td class="wrap-new-lines">{{.Name}}</td>
+            <td>
+                <div style="text-align: center;">
+                    <a href="/stats/user/{{.Id}}"><button>View</button></a>
+                </div>
+            </td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{end}}
+{{end}}
