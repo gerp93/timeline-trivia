@@ -8,6 +8,12 @@ history-trivia game where players place event cards into a chronological
 timeline instead of judging prompt/response cards. Credit and thanks to the
 original project for the platform this was built on.
 
+## Deployment
+
+Deployment is managed by [gameshell-deploy](https://github.com/gerp93/gameshell-deploy).
+Configuration and database backups live in that repo under `games/timeline-trivia/`.
+See the gameshell-deploy README for setup and usage.
+
 ## Environment Variables
 
 ```

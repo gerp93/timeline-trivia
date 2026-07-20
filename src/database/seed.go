@@ -315,3 +315,30 @@ func getCardTextsInDeck(deckId uuid.UUID) (map[string]bool, error) {
 	}
 	return texts, nil
 }
+
+// SeedDefaultUserIfEmpty creates a default user account if none exist.
+// This is used on fresh deployments to provide an initial login.
+func SeedDefaultUserIfEmpty() error {
+	sqlString := `SELECT COUNT(*) FROM USER`
+	rows, err := query(sqlString)
+	if err != nil {
+		log.Println(err)
+		return errors.New("failed to check if users exist")
+	}
+	defer rows.Close()
+
+	var count int
+	if !rows.Next() {
+		return errors.New("failed to query user count")
+	}
+	if err := rows.Scan(&count); err != nil {
+		log.Println(err)
+		return errors.New("failed to scan user count")
+	}
+
+	if count > 0 {
+		return nil
+	}
+
+	return gsDatabase.CreateUser("default", "password", false)
+}

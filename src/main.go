@@ -102,6 +102,10 @@ func main() {
 		log.Fatalln(err)
 		return
 	}
+	if err := database.SeedDefaultUserIfEmpty(); err != nil {
+		log.Fatalln(err)
+		return
+	}
 
 	// static files (game's own, plus shared framework assets under /gs/)
 	http.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static.StaticFiles))))
