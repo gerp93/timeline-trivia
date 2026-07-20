@@ -1,11 +1,15 @@
-﻿<div id="timeline-container">
+<div id="timeline-container">
+    {{if and (eq .GameStatus "active") .CurrentPlayerName}}
+    <div class="whose-turn-banner">
+        <span class="whose-turn-icon">🎯</span>
+        <span><span class="whose-turn-name">{{.CurrentPlayerName}}'s</span> turn to guess</span>
+        {{if .IsSteal}}
+        <span class="whose-turn-steal">(stealing{{if .MissedByNames}} after {{.MissedByNames}} missed{{end}})</span>
+        {{end}}
+    </div>
+    {{end}}
     {{range $pIndex, $player := .AllTimelines}}
-    <div class="player-timeline-row {{if $player.IsCurrent}}current-player{{end}} {{if $player.IsMe}}is-me{{end}}">
-        <div class="player-timeline-header">
-            <span class="player-name">{{$player.PlayerName}}</span>
-            {{if and $player.IsCurrent (eq $.GameStatus "active")}}<span class="turn-badge">🎯 Current Turn</span>{{end}}
-            <span class="card-count">{{len $player.Timeline}} cards</span>
-        </div>
+    <div class="player-timeline-row {{if $player.IsMe}}is-me{{end}}">
         <div class="timeline-horizontal">
             {{if eq (len $player.Timeline) 0}}
             {{if and $player.HasAttempt (eq $player.AttemptedPosition 0)}}
@@ -66,6 +70,10 @@
             </div>
             {{end}}
             {{end}}
+        </div>
+        <div class="player-info-column">
+            <span class="player-name">{{$player.PlayerName}}</span>
+            <span class="card-count">{{len $player.Timeline}} cards</span>
         </div>
     </div>
     {{end}}

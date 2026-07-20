@@ -14,8 +14,8 @@
 #timeline-trivia-header {
     padding: 8px 15px;
     border-radius: 6px;
-    border: 1px solid var(--border-lighter);
-    background-color: var(--bg-subtle);
+    border: 1px solid var(--color-bg-hover);
+    background-color: var(--color-bg-hover);
     flex-shrink: 0;
 }
 
@@ -75,7 +75,7 @@
 .scoreboard-table td {
     padding: 4px 10px;
     text-align: left;
-    border-bottom: 1px solid var(--border-lighter);
+    border-bottom: 1px solid var(--color-bg-hover);
 }
 
 .scoreboard-table th {
@@ -86,7 +86,7 @@
 }
 
 .scoreboard-table tr.current-player {
-    background-color: var(--accent-color);
+    background-color: var(--color-accent-blue);
     color: white;
     font-weight: bold;
 }
@@ -105,15 +105,16 @@
     width: 100%;
     padding: 12px 30px;
     border-radius: 8px;
-    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+    background: linear-gradient(135deg, var(--color-primary-action), var(--color-accent-blue));
     color: white;
     text-align: center;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 
 .current-event-banner.current-event-empty {
-    background: var(--bg-subtle);
-    color: var(--text-secondary);
+    background: var(--color-bg-hover);
+    color: var(--color-text);
+    opacity: 0.7;
     padding: 10px 30px;
 }
 
@@ -159,7 +160,7 @@
 }
 
 .turn-status.your-turn {
-    background-color: var(--accent-color);
+    background-color: var(--color-accent-blue);
     color: white;
     font-weight: bold;
 }
@@ -175,53 +176,73 @@
     padding: 0 5px;
 }
 
-/* Player Timeline Row */
+/* Player Timeline Row — every row gets identical treatment; whose turn it
+   is lives in .whose-turn-banner (above the list), not per-row styling. */
 .player-timeline-row {
-    border: 2px solid var(--border-color);
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    border: 2px solid var(--color-top-bar-bg);
     border-radius: 8px;
-    background-color: var(--bg-subtle);
+    background-color: var(--color-bg-hover);
     padding: 6px 10px;
     min-height: 0;
 }
 
-.player-timeline-row.current-player {
-    border-color: var(--accent-color);
-    border-width: 3px;
-    background: linear-gradient(135deg, rgba(var(--accent-color-rgb, 100, 149, 237), 0.15), rgba(var(--accent-color-rgb, 100, 149, 237), 0.05));
-    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-}
-
-.player-timeline-header {
+/* Fixed-width info column, always pinned to the right of the row */
+.player-info-column {
+    flex: 0 0 118px;
+    width: 118px;
     display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 4px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--border-lighter);
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 3px;
+    padding-left: 10px;
+    border-left: 1px solid var(--color-bg);
 }
 
-.player-timeline-header .player-name {
+.player-info-column .player-name {
     font-weight: bold;
     font-size: 0.95em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
 }
 
-.player-timeline-row.current-player .player-name {
-    color: var(--accent-color);
+.player-info-column .card-count {
+    font-size: 0.85em;
+    color: var(--color-text);
+    opacity: 0.7;
 }
 
-.player-timeline-header .turn-badge {
-    background-color: var(--accent-color);
-    color: white;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 0.75em;
+/* Single indicator for whose turn it is (own turn or stealing alike) —
+   replaces the old per-row highlight/badge. */
+.whose-turn-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 6px 12px;
+    margin-bottom: 6px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-accent-blue) 16%, transparent);
+    border: 1px solid var(--color-accent-blue);
+    font-size: 0.9em;
+    flex-shrink: 0;
+}
+
+.whose-turn-banner .whose-turn-name {
+    color: var(--color-accent-blue);
     font-weight: bold;
 }
 
-.player-timeline-header .card-count {
-    margin-left: auto;
-    font-size: 0.85em;
+.whose-turn-banner .whose-turn-steal {
+    color: var(--color-text);
     opacity: 0.7;
+    font-size: 0.85em;
+    font-style: italic;
 }
 
 /* Timeline - Horizontal Display */
@@ -236,8 +257,11 @@
     overflow-x: auto;
     min-height: calc(var(--tt-card-h) + 12px);
     border-radius: 6px;
-    background-color: var(--background-color);
-    width: 100%;
+    background-color: var(--color-bg);
+    /* shares the row with .player-info-column now, rather than owning the
+       full row width */
+    flex: 1;
+    min-width: 0;
     flex-wrap: nowrap;
 }
 
@@ -247,9 +271,9 @@
     min-width: 60px;
     max-width: 84px;
     height: var(--tt-card-h);
-    border: 2px solid var(--border-color);
+    border: 2px solid var(--color-top-bar-bg);
     border-radius: 6px;
-    background-color: var(--background-color);
+    background-color: var(--color-bg);
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     display: flex;
     flex-direction: column;
@@ -274,7 +298,7 @@
 }
 
 .card-year-badge {
-    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+    background: linear-gradient(135deg, var(--color-primary-action), var(--color-accent-blue));
     color: white;
     padding: 4px 3px;
     font-weight: bold;
@@ -296,7 +320,8 @@
 .card-event-text {
     font-size: 9.5px;
     line-height: 1.2;
-    color: var(--text-secondary);
+    color: var(--color-text);
+    opacity: 0.8;
     flex: 1;
     padding: 2px 4px;
     text-align: center;
@@ -320,7 +345,7 @@
        affected by that rule and would end up visibly shorter */
     padding: 0;
     margin: 0;
-    border: 2px dashed var(--primary-color);
+    border: 2px dashed var(--color-primary-action);
     border-radius: 8px;
     background-color: transparent;
     cursor: pointer;
@@ -331,7 +356,7 @@
 }
 
 .place-slot-button:hover {
-    background-color: var(--primary-color);
+    background-color: var(--color-primary-action);
     border-style: solid;
     transform: scale(1.1);
 }
@@ -343,32 +368,33 @@
 
 .slot-dot {
     font-size: 24px;
-    color: var(--primary-color);
+    color: var(--color-primary-action);
 }
 
 .slot-arrow {
     font-size: 20px;
-    color: var(--primary-color);
+    color: var(--color-primary-action);
 }
 
 /* End slots (first/last) are wider */
 .timeline-slot-end .place-slot-button {
     width: 40px;
-    border-color: var(--accent-color);
+    border-color: var(--color-accent-blue);
 }
 
 .timeline-slot-end .slot-arrow {
-    color: var(--accent-color);
+    color: var(--color-accent-blue);
 }
 
 .timeline-slot-end .place-slot-button:hover {
-    background-color: var(--accent-color);
+    background-color: var(--color-accent-blue);
 }
 
 .timeline-empty-state {
     flex: 1;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--color-text);
+    opacity: 0.7;
     font-style: italic;
     padding: 30px;
 }
@@ -391,19 +417,21 @@
 .btn-link {
     display: inline-block;
     margin-left: 15px;
-    color: var(--text-secondary);
+    color: var(--color-text);
+    opacity: 0.7;
     text-decoration: underline;
 }
 
 .btn-link:hover {
-    color: var(--text-color);
+    color: var(--color-text);
+    opacity: 1;
 }
 
 .btn {
     display: inline-block;
     padding: 10px 20px;
     border-radius: 6px;
-    background-color: var(--secondary-color);
+    background-color: var(--color-primary-action);
     color: white;
     text-decoration: none;
     border: none;
@@ -412,7 +440,7 @@
 }
 
 .btn.btn-primary {
-    background-color: var(--primary-color);
+    background-color: var(--color-primary-action);
 }
 
 .btn:hover {
@@ -483,7 +511,7 @@
     height: 150px;
     display: grid;
     grid-template-rows: 1fr auto;
-    border: 2px solid var(--border-subtle);
+    border: 2px solid var(--color-bg-hover);
     border-radius: 8px;
     overflow: hidden;
 }
@@ -497,7 +525,7 @@
     display: flex;
     gap: 5px;
     padding: 10px;
-    border-top: 1px solid var(--border-lighter);
+    border-top: 1px solid var(--color-bg-hover);
 }
 
 #timeline-trivia-chat-input {

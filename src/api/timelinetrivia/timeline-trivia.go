@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 
 	gsApi "github.com/gerp93/gameshell-framework/api"
 	gsDatabase "github.com/gerp93/gameshell-framework/database"
@@ -473,6 +474,22 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 
 	isMyTurn := game.CurrentPlayerId.Valid && game.CurrentPlayerId.UUID == player.Id
 
+	// Whose turn it is to guess right now (own turn or stealing alike),
+	// shown once above the player list instead of per-row — see
+	// database.TimelineTriviaPlayerTimeline.IsCurrent / HasAttempt.
+	var currentPlayerName string
+	var missedNames []string
+	for _, p := range allTimelines {
+		if p.IsCurrent {
+			currentPlayerName = p.PlayerName
+		}
+		if p.HasAttempt {
+			missedNames = append(missedNames, p.PlayerName)
+		}
+	}
+	isSteal := game.CurrentPlayerId.Valid && game.RoundStarterPlayerId.Valid &&
+		game.CurrentPlayerId.UUID != game.RoundStarterPlayerId.UUID
+
 	funcMap := template.FuncMap{
 		"add":        func(a, b int) int { return a + b },
 		"formatYear": database.FormatYear,
@@ -489,17 +506,23 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type data struct {
-		AllTimelines []database.TimelineTriviaPlayerTimeline
-		IsMyTurn     bool
-		GameStatus   string
-		LobbyId      uuid.UUID
+		AllTimelines      []database.TimelineTriviaPlayerTimeline
+		IsMyTurn          bool
+		GameStatus        string
+		LobbyId           uuid.UUID
+		CurrentPlayerName string
+		IsSteal           bool
+		MissedByNames     string
 	}
 
 	_ = tmpl.Execute(w, data{
-		AllTimelines: allTimelines,
-		IsMyTurn:     isMyTurn,
-		GameStatus:   game.GameStatus,
-		LobbyId:      lobbyId,
+		AllTimelines:      allTimelines,
+		IsMyTurn:          isMyTurn,
+		GameStatus:        game.GameStatus,
+		LobbyId:           lobbyId,
+		CurrentPlayerName: currentPlayerName,
+		IsSteal:           isSteal,
+		MissedByNames:     strings.Join(missedNames, ", "),
 	})
 }
 
