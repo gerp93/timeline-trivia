@@ -60,9 +60,9 @@ function initTimelineTriviaWebSocket(lobbyId, playerId) {
         // Handle result popups (correct/incorrect placement)
         if (messageText.startsWith("result:")) {
             const parts = messageText.split(":");
-            // format: result:playerName:correct/incorrect:message
+            // format: result:playerName:correct/incorrect/revealed:message
             const playerName = parts[1];
-            const resultType = parts[2]; // "correct" or "incorrect"
+            const resultType = parts[2]; // "correct", "incorrect", or "revealed" (everyone missed)
             const message = parts.slice(3).join(":");
             showResultPopup(playerName, resultType, message);
             return;
@@ -176,12 +176,18 @@ function showResultPopup(playerName, resultType, message) {
     const backdrop = document.createElement("div");
     backdrop.className = "timeline-trivia-popup-backdrop";
 
+    // "revealed" = every player missed the card; it reuses the "incorrect"
+    // styling but reveals the actual year and stays up longer since there's
+    // more to read.
+    const isRevealed = resultType === "revealed";
+    const styleClass = isRevealed ? "incorrect" : resultType;
+
     // Create popup
     const popup = document.createElement("div");
-    popup.className = "timeline-trivia-popup " + resultType;
+    popup.className = "timeline-trivia-popup " + styleClass;
 
     const icon = resultType === "correct" ? "✓" : "✗";
-    const title = resultType === "correct" ? "CORRECT!" : "WRONG!";
+    const title = resultType === "correct" ? "CORRECT!" : isRevealed ? "NOBODY GOT IT!" : "WRONG!";
 
     popup.innerHTML = `
         <span class="popup-icon">${icon}</span>
@@ -192,10 +198,10 @@ function showResultPopup(playerName, resultType, message) {
     backdrop.appendChild(popup);
     document.body.appendChild(backdrop);
 
-    // Auto-remove after 2 seconds
+    // Auto-remove; "revealed" gets extra time since it has more to read
     setTimeout(() => {
         backdrop.remove();
-    }, 2000);
+    }, isRevealed ? 5000 : 2000);
 
     // Also allow click to dismiss
     backdrop.addEventListener("click", () => {

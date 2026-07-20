@@ -27,11 +27,18 @@ func FormatYear(year int) string {
 // realistically takes several times that many rounds once other players'
 // turns and missed guesses are accounted for; picking too few cards for too
 // high a target risks the draw pile running dry before anyone wins.
-const MinCardsPerWinRatio = 3
+const MinCardsPerWinRatio = 4
+
+// MinCardsToWin is the smallest "cards to win" a lobby can be configured
+// with — below this the game ends almost as soon as it starts.
+const MinCardsToWin = 5
 
 // ValidateCardsToWin returns a descriptive error if totalCards isn't enough
 // to safely support the given CardsToWin target (see MinCardsPerWinRatio).
 func ValidateCardsToWin(cardsToWin int, totalCards int) error {
+	if cardsToWin < MinCardsToWin {
+		return fmt.Errorf("cards to win (%d) is below the minimum of %d", cardsToWin, MinCardsToWin)
+	}
 	minRequired := cardsToWin * MinCardsPerWinRatio
 	if totalCards < minRequired {
 		return fmt.Errorf(

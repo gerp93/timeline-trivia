@@ -315,6 +315,11 @@
 .place-slot-button {
     width: 32px;
     height: var(--tt-card-h);
+    /* global `button { padding: 5px; margin: 5px; }` would otherwise inflate
+       this well past --tt-card-h, since .timeline-card-box (a div) isn't
+       affected by that rule and would end up visibly shorter */
+    padding: 0;
+    margin: 0;
     border: 2px dashed var(--primary-color);
     border-radius: 8px;
     background-color: transparent;

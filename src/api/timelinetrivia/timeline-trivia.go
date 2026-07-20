@@ -312,8 +312,13 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if roundExhausted {
-		// Every active player missed this card; it's discarded. Next round
-		// starts with the next active player after this round's starter.
+		// Every active player missed this card; it's discarded. Reveal the
+		// year it actually was before ResolveCardRound clears the current
+		// card and draws the next one.
+		revealedCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
+
+		// Next round starts with the next active player after this round's
+		// starter.
 		if err := database.ResolveCardRound(game.Id); err != nil {
 			gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 			w.WriteHeader(http.StatusOK)
@@ -321,7 +326,10 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:incorrect:Wrong! Everyone missed — card discarded.", player.Name))
+		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf(
+			"result:%s:revealed:Everyone missed! It was %s. Card discarded.",
+			player.Name, database.FormatYear(revealedCard.CardYear),
+		))
 		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Incorrect. Everyone missed — card discarded."))
