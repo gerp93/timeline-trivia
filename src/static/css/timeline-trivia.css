@@ -1,13 +1,25 @@
 /* timeline-trivia Game Styles */
 
+/* Page grid: game area gets remaining space, chat is a fixed row pinned to the bottom */
+#timeline-trivia-page {
+    height: calc(100vh - 100px);
+    display: grid;
+    grid-template-rows: 1fr 150px;
+    grid-template-areas:
+        "container"
+        "chat";
+    gap: 8px;
+    padding: 8px;
+}
+
 /* Main container */
 #timeline-trivia-container {
-    height: calc(100vh - 100px);
+    grid-area: container;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 8px;
     overflow: hidden;
+    min-height: 0;
 }
 
 /* Header Section */
@@ -510,12 +522,13 @@
 
 /* Chat Section */
 #timeline-trivia-chat {
-    height: 150px;
+    grid-area: chat;
     display: grid;
     grid-template-rows: 1fr auto;
     border: 2px solid var(--color-bg-hover);
     border-radius: 8px;
     overflow: hidden;
+    min-height: 0;
 }
 
 #timeline-trivia-chat-messages {

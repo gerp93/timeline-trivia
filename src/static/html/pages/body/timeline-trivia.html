@@ -4,11 +4,15 @@
 <script src="/static/js/timeline-trivia.js"></script>
 <link rel="stylesheet" href="/static/css/timeline-trivia.css" />
 
+<div id="timeline-trivia-page">
 <div id="timeline-trivia-container">
     <!-- Top Header: Lobby Name and Stats only -->
     <div id="timeline-trivia-header">
         <div class="header-top">
-            <span class="lobby-name">{{.Lobby.Name}}</span>
+            <span class="lobby-name">
+                {{.Lobby.Name}}
+                <span class="bi bi-pencil clickable" onclick="document.getElementById('lobby-message-edit-dialog').showModal()"></span>
+            </span>
             <div class="header-stats">
                 <span class="info-stat">Cards to win: <strong>{{.Game.CardsToWin}}</strong></span>
                 <span class="info-stat" id="draw-pile-count">Remaining: <strong>--</strong></span>
@@ -82,9 +86,53 @@
         <input type="submit" value="Send" />
     </form>
 </div>
+</div>
+
+{{if .Lobby.Message.Valid}}
+<dialog id="lobby-message-dialog">
+    <div style="display: grid; grid-auto-flow: column">
+        <div>
+            <h3>{{.Lobby.Name}}</h3>
+            <p>{{.Lobby.Message.String}}</p>
+        </div>
+        <div>
+            <span class="bi bi-x-lg close-button" onclick="document.getElementById('lobby-message-dialog').close()"></span>
+        </div>
+    </div>
+</dialog>
+{{end}}
+
+<dialog id="lobby-message-edit-dialog">
+    <div style="display: grid; grid-auto-flow: column">
+        <h3>Edit Lobby Message</h3>
+        <div>
+            <span class="bi bi-x-lg close-button" onclick="document.getElementById('lobby-message-edit-dialog').close()"></span>
+        </div>
+    </div>
+    <form
+        hx-put="/api/timeline-trivia/{{.Lobby.Id}}/message"
+        hx-target="find .htmx-result"
+    >
+        <input
+            type="text"
+            name="message"
+            maxlength="255"
+            placeholder="Enter Message"
+            value="{{.Lobby.Message.String}}"
+            autocomplete="off"
+        />
+        <input type="submit" value="Update" />
+        <div class="htmx-result"></div>
+    </form>
+</dialog>
 
 <script>
     // Initialize WebSocket for real-time updates
     initTimelineTriviaWebSocket("{{.Lobby.Id}}", "{{.PlayerId}}");
+
+    window.addEventListener("load", () => {
+        const lobbyMessageDialog = document.getElementById("lobby-message-dialog");
+        if (lobbyMessageDialog) lobbyMessageDialog.showModal();
+    });
 </script>
 {{end}}

@@ -773,3 +773,39 @@ func Search(w http.ResponseWriter, r *http.Request) {
 		PageSize:    10, // Same as database query LIMIT
 	})
 }
+
+// SetLobbyMessage sets the lobby's welcome message, shown to players on entry
+func SetLobbyMessage(w http.ResponseWriter, r *http.Request) {
+	lobbyIdString := r.PathValue("lobbyId")
+	lobbyId, err := uuid.Parse(lobbyIdString)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("invalid lobby id"))
+		return
+	}
+
+	userId := gsApi.GetUserId(r)
+
+	player, err := gsDatabase.GetLobbyUserPlayer(lobbyId, userId)
+	if err != nil || player.Id == uuid.Nil {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("not a player in this lobby"))
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("failed to parse form"))
+		return
+	}
+
+	message := r.FormValue("message")
+
+	if err := gsDatabase.SetLobbyMessage(lobbyId, message); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to set lobby message"))
+		return
+	}
+
+	gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("<green>%s</>: Lobby message set to %s", player.Name, message))
+}
