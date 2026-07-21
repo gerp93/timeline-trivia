@@ -16,14 +16,13 @@ const MinDecadeGuesses = 10
 
 // readableDeckPredicate filters to decks the viewer is allowed to read: a
 // public deck, one they've been explicitly granted, or any deck if they're an
-// admin — and never a hidden deck. It assumes DECK is joined as D and CARD as
-// C, and takes the viewer's user id as two positional parameters (one for the
-// grant check, one for the admin check). This is the "readable" notion from
-// the framework's SP_GET_READABLE_DECKS, which (unlike FN_USER_HAS_DECK_ACCESS)
-// includes public decks — the right filter for stats.
+// admin. It assumes DECK is joined as D and CARD as C, and takes the viewer's
+// user id as two positional parameters (one for the grant check, one for the
+// admin check). This is the "readable" notion from the framework's
+// SP_GET_READABLE_DECKS, which (unlike FN_USER_HAS_DECK_ACCESS) includes public
+// decks — the right filter for stats.
 const readableDeckPredicate = `
-	D.IS_HIDDEN = 0
-	AND (
+	(
 		D.IS_PUBLIC_READONLY = 1
 		OR EXISTS (SELECT 1 FROM USER_ACCESS_DECK UAD WHERE UAD.DECK_ID = D.ID AND UAD.USER_ID = ?)
 		OR EXISTS (SELECT 1 FROM USER U WHERE U.ID = ? AND U.IS_ADMIN = 1)
@@ -261,7 +260,6 @@ func GetLeaderboard() ([]LeaderboardEntry, error) {
 						INNER JOIN CARD AS C ON C.ID = LG.CARD_ID
 						INNER JOIN DECK AS D ON D.ID = C.DECK_ID
 					WHERE LG.USER_ID = U.ID
-						AND D.IS_HIDDEN = 0
 						AND D.IS_PUBLIC_READONLY = 1
 				) AS TOTAL_GUESSES,
 				(
@@ -270,7 +268,6 @@ func GetLeaderboard() ([]LeaderboardEntry, error) {
 						INNER JOIN CARD AS C ON C.ID = LG.CARD_ID
 						INNER JOIN DECK AS D ON D.ID = C.DECK_ID
 					WHERE LG.USER_ID = U.ID
-						AND D.IS_HIDDEN = 0
 						AND D.IS_PUBLIC_READONLY = 1
 				) AS CORRECT_GUESSES
 			FROM USER AS U
