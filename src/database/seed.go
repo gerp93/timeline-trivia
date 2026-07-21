@@ -340,5 +340,14 @@ func SeedDefaultUserIfEmpty() error {
 		return nil
 	}
 
-	return gsDatabase.CreateUser("default", "password", false)
+	if err := gsDatabase.CreateUser("default", "password", true); err != nil {
+		return err
+	}
+
+	userId, err := gsDatabase.GetUserIdByName("default")
+	if err != nil {
+		return err
+	}
+
+	return gsDatabase.SetUserIsAdmin(userId, true)
 }
