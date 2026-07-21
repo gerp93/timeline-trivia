@@ -5,27 +5,16 @@ import (
 	"strings"
 
 	gsApi "github.com/gerp93/gameshell-framework/api"
-	gsDatabase "github.com/gerp93/gameshell-framework/database"
 	"github.com/google/uuid"
 
 	"github.com/gerp93/timeline-trivia/database"
 )
 
-// isAdmin reports whether the requesting user is an administrator. Category
-// management is admin-only; the /categories page is gated by the page policy,
-// but these API endpoints go through MiddlewareForAPIs (login only) so they
-// must check admin themselves.
-func isAdmin(r *http.Request) bool {
-	userId := gsApi.GetUserId(r)
-	if userId == uuid.Nil {
-		return false
-	}
-	admin, _ := gsDatabase.GetUserIsAdmin(userId)
-	return admin
-}
-
 func Create(w http.ResponseWriter, r *http.Request) {
-	if !isAdmin(r) {
+	// Category management is admin-only; the /categories page is gated by the
+	// page policy, but these API endpoints go through MiddlewareForAPIs (login
+	// only) so they must check admin themselves.
+	if !gsApi.UserIsAdmin(r) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte("User does not have access."))
 		return
@@ -74,7 +63,7 @@ func Create(w http.ResponseWriter, r *http.Request) {
 // DeleteReassign deletes a category after moving every card in it to a target
 // category chosen by the admin.
 func DeleteReassign(w http.ResponseWriter, r *http.Request) {
-	if !isAdmin(r) {
+	if !gsApi.UserIsAdmin(r) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte("User does not have access."))
 		return

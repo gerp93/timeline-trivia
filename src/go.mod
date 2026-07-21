@@ -3,7 +3,7 @@ module github.com/gerp93/timeline-trivia
 go 1.22.5
 
 require (
-	github.com/gerp93/gameshell-framework v0.4.0
+	github.com/gerp93/gameshell-framework v0.5.0
 	github.com/google/uuid v1.6.0
 )
 

@@ -38,9 +38,9 @@ func main() {
 	gsApi.SetPagePolicy(gsApi.PagePolicy{
 		LoginPaths: []string{"/account", "/users", "/categories", "/stats"},
 		LoginPathPrefixes: []string{
-			"/deck/",
-			"/timeline-trivia/",
-			"/stats/",
+			"/deck",
+			"/timeline-trivia",
+			"/stats",
 		},
 		AdminPaths: []string{"/users", "/categories"},
 	})
