@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -67,15 +68,17 @@ type TimelineTriviaTimelineCard struct {
 	CardId       uuid.UUID
 	CardText     string
 	CardYear     int
+	CategoryName sql.NullString
 	Position     int
 	PlacedOnDate time.Time
 }
 
 // TimelineTriviaCurrentCard represents the current card being played
 type TimelineTriviaCurrentCard struct {
-	CardId   uuid.UUID
-	CardText string
-	CardYear int
+	CardId       uuid.UUID
+	CardText     string
+	CardYear     int
+	CategoryName sql.NullString
 }
 
 // TimelineTriviaPlayer represents a player in a TimelineTrivia game with their timeline
@@ -416,9 +419,10 @@ func GetTimelineTriviaCurrentCard(gameId uuid.UUID) (TimelineTriviaCurrentCard, 
 	var card TimelineTriviaCurrentCard
 
 	sqlString := `
-		SELECT CC.CARD_ID, C.TEXT, CC.CARD_YEAR
+		SELECT CC.CARD_ID, C.TEXT, CC.CARD_YEAR, TC.NAME
 		FROM TIMELINE_TRIVIA_CURRENT_CARD CC
 		INNER JOIN CARD C ON C.ID = CC.CARD_ID
+		LEFT JOIN TIMELINE_TRIVIA_CATEGORY TC ON TC.ID = C.CATEGORY_ID
 		WHERE CC.TIMELINE_TRIVIA_GAME_ID = ?
 	`
 	rows, err := query(sqlString, gameId)
@@ -428,7 +432,7 @@ func GetTimelineTriviaCurrentCard(gameId uuid.UUID) (TimelineTriviaCurrentCard, 
 	defer rows.Close()
 
 	for rows.Next() {
-		if err := rows.Scan(&card.CardId, &card.CardText, &card.CardYear); err != nil {
+		if err := rows.Scan(&card.CardId, &card.CardText, &card.CardYear, &card.CategoryName); err != nil {
 			log.Println(err)
 			return card, errors.New("failed to scan row in query results")
 		}
@@ -440,9 +444,10 @@ func GetTimelineTriviaCurrentCard(gameId uuid.UUID) (TimelineTriviaCurrentCard, 
 // GetPlayerTimeline gets all cards in a player's timeline for a game
 func GetPlayerTimeline(gameId uuid.UUID, playerId uuid.UUID) ([]TimelineTriviaTimelineCard, error) {
 	sqlString := `
-		SELECT PT.ID, PT.CARD_ID, C.TEXT, PT.CARD_YEAR, PT.POSITION, PT.PLACED_ON_DATE
+		SELECT PT.ID, PT.CARD_ID, C.TEXT, PT.CARD_YEAR, TC.NAME, PT.POSITION, PT.PLACED_ON_DATE
 		FROM TIMELINE_TRIVIA_PLAYER_TIMELINE PT
 		INNER JOIN CARD C ON C.ID = PT.CARD_ID
+		LEFT JOIN TIMELINE_TRIVIA_CATEGORY TC ON TC.ID = C.CATEGORY_ID
 		WHERE PT.TIMELINE_TRIVIA_GAME_ID = ? AND PT.PLAYER_ID = ?
 		ORDER BY PT.POSITION ASC
 	`
@@ -460,6 +465,7 @@ func GetPlayerTimeline(gameId uuid.UUID, playerId uuid.UUID) ([]TimelineTriviaTi
 			&card.CardId,
 			&card.CardText,
 			&card.CardYear,
+			&card.CategoryName,
 			&card.Position,
 			&card.PlacedOnDate,
 		); err != nil {

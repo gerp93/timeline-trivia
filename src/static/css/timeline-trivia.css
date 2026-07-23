@@ -139,6 +139,18 @@
     text-transform: uppercase;
 }
 
+.current-event-category {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    margin-bottom: 6px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
 .current-event-text {
     font-size: 1.2em;
     font-weight: bold;
@@ -329,6 +341,18 @@
        past — shrink to keep it on one line instead of wrapping/clipping. */
     font-size: 10px;
     letter-spacing: -0.2px;
+}
+
+.card-category-badge {
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    text-align: center;
+    color: var(--color-text);
+    opacity: 0.65;
+    padding: 3px 4px 0;
+    flex-shrink: 0;
 }
 
 .card-event-text {

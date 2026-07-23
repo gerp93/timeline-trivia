@@ -1,6 +1,9 @@
 {{if .CardId}}
 <div class="current-event-banner">
     <div class="current-event-label">CURRENT EVENT</div>
+    {{if .CategoryName.Valid}}
+    <div class="current-event-category">{{.CategoryName.String}}</div>
+    {{end}}
     <div class="current-event-text">{{.CardText}}</div>
     <div class="current-event-hint">Where does this belong in your timeline?</div>
     {{if .Attempts}}

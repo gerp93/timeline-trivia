@@ -44,6 +44,9 @@
             {{end}}
             <div class="timeline-card-box">
                 <div class="card-year-badge{{if lt $card.CardYear 0}} bce{{end}}">{{formatYear $card.CardYear}}</div>
+                {{if $card.CategoryName.Valid}}
+                <div class="card-category-badge">{{$card.CategoryName.String}}</div>
+                {{end}}
                 <div class="card-event-text">{{$card.CardText}}</div>
             </div>
             <!-- Place After this card (only for current player who is viewing, and game is active) -->
