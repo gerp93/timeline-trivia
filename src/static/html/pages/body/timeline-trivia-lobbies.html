@@ -100,7 +100,29 @@
                         class="deck-checkbox"
                         onchange="syncSelectAllDecks(); scheduleCardCountRecalc();"
                     />
-                    <label for="deck-{{.Id}}">{{.Name}}</label>
+                    <label for="deck-{{.Id}}">{{.Name}} ({{.CardCount}} cards)</label>
+                </div>
+                {{end}}
+            </div>
+        </details>
+        <br />
+        <details>
+            <summary>Categories (optional)</summary>
+            <p style="font-size: 0.85em; opacity: 0.8; margin: 6px 0;">
+                All categories are included by default. Check a category to
+                exclude it from the draw pile.
+            </p>
+            <div style="max-height: 200px; overflow-y: auto; padding: 10px;">
+                {{range .Categories}}
+                <div>
+                    <input
+                        type="checkbox"
+                        id="excluded-category-{{.Id}}"
+                        name="excludedCategoryId"
+                        value="{{.Id}}"
+                        onchange="scheduleCardCountRecalc()"
+                    />
+                    <label for="excluded-category-{{.Id}}">Exclude {{.Name}}</label>
                 </div>
                 {{end}}
             </div>
@@ -162,6 +184,10 @@
 
     function getSelectedDeckIds() {
         return Array.from(document.querySelectorAll('input[name="deckId"]:checked')).map((el) => el.value);
+    }
+
+    function getExcludedCategoryIds() {
+        return Array.from(document.querySelectorAll('input[name="excludedCategoryId"]:checked')).map((el) => el.value);
     }
 
     function toggleAllDecks(checked) {
@@ -248,12 +274,15 @@
             }))
             .filter((r) => r.from !== "" && r.to !== "");
 
+        const excludedCategoryIds = getExcludedCategoryIds();
+
         const totalParams = new URLSearchParams();
         deckIds.forEach((id) => totalParams.append("deckId", id));
         completeRanges.forEach((r) => {
             totalParams.append("fromYear", r.from);
             totalParams.append("toYear", r.to);
         });
+        excludedCategoryIds.forEach((id) => totalParams.append("excludedCategoryId", id));
         const total = await fetchCardCount(totalParams);
         if (myToken !== cardCountRecalcToken) return;
         if (totalEl) totalEl.textContent = cardCountLabel(total);
@@ -272,6 +301,7 @@
             deckIds.forEach((id) => params.append("deckId", id));
             params.append("fromYear", from);
             params.append("toYear", to);
+            excludedCategoryIds.forEach((id) => params.append("excludedCategoryId", id));
             const count = await fetchCardCount(params);
             if (myToken !== cardCountRecalcToken) return;
             countEl.textContent = cardCountLabel(count);

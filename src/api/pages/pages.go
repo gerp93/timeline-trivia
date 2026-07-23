@@ -437,6 +437,32 @@ func TimelineTriviaLobbies(w http.ResponseWriter, r *http.Request) {
 		decks = make([]gsDatabase.Deck, 0)
 	}
 
+	deckIds := make([]uuid.UUID, 0, len(decks))
+	for _, d := range decks {
+		deckIds = append(deckIds, d.Id)
+	}
+	cardCounts, err := database.GetDeckCardCounts(deckIds)
+	if err != nil {
+		cardCounts = make(map[uuid.UUID]int)
+	}
+
+	categories, err := database.GetCategories()
+	if err != nil {
+		categories = make([]database.Category, 0)
+	}
+
+	type deckWithCardCount struct {
+		gsDatabase.Deck
+		CardCount int
+	}
+	decksWithCounts := make([]deckWithCardCount, 0, len(decks))
+	for _, d := range decks {
+		decksWithCounts = append(decksWithCounts, deckWithCardCount{
+			Deck:      d,
+			CardCount: cardCounts[d.Id],
+		})
+	}
+
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
 		"html/pages/base.html",
@@ -450,13 +476,15 @@ func TimelineTriviaLobbies(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		Decks               []gsDatabase.Deck
+		Decks               []deckWithCardCount
+		Categories          []database.Category
 		MinCardsPerWinRatio int
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
 		BasePageData:        basePageData,
-		Decks:               decks,
+		Decks:               decksWithCounts,
+		Categories:          categories,
 		MinCardsPerWinRatio: database.MinCardsPerWinRatio,
 	})
 }
@@ -517,7 +545,7 @@ func TimelineTriviaLobby(w http.ResponseWriter, r *http.Request) {
 		}
 		// Initialize draw pile with the TimelineTrivia deck (cards use authored years)
 		timelineTriviaDeckId, _ := uuid.Parse("88026803-d22a-11f0-b4d2-60cf84649547")
-		if initErr := database.InitializeTimelineTriviaDrawPile(gameId, []uuid.UUID{timelineTriviaDeckId}); initErr != nil {
+		if initErr := database.InitializeTimelineTriviaDrawPile(gameId, []uuid.UUID{timelineTriviaDeckId}, nil); initErr != nil {
 			log.Printf("[ERROR TimelineTriviaLobby] Failed to initialize draw pile for lobby %s: %v", lobbyId, initErr)
 		}
 		// Re-fetch the game

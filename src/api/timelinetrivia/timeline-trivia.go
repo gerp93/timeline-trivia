@@ -34,7 +34,7 @@ func ensureGameExists(lobbyId uuid.UUID) (database.TimelineTriviaGame, error) {
 	}
 
 	// Initialize draw pile with the TimelineTrivia deck (cards use authored years)
-	_ = database.InitializeTimelineTriviaDrawPile(gameId, []uuid.UUID{timelineTriviaDeckId})
+	_ = database.InitializeTimelineTriviaDrawPile(gameId, []uuid.UUID{timelineTriviaDeckId}, nil)
 
 	// Re-fetch the game
 	return database.GetTimelineTriviaGame(lobbyId)
@@ -106,9 +106,18 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		ranges = append(ranges, database.TimelineTriviaYearRange{FromYear: from, ToYear: to})
 	}
 
+	// Parse excluded category ids (all categories are included by default).
+	excludedCategoryIdStrings := r.Form["excludedCategoryId"]
+	excludedCategoryIds := make([]uuid.UUID, 0, len(excludedCategoryIdStrings))
+	for _, idStr := range excludedCategoryIdStrings {
+		if id, err := uuid.Parse(idStr); err == nil {
+			excludedCategoryIds = append(excludedCategoryIds, id)
+		}
+	}
+
 	// Safety check: cards to win must be realistic for what the selected
-	// decks/year ranges actually contain, before creating anything.
-	totalCards, err := database.CountCardsInDecksForRanges(deckIds, ranges)
+	// decks/year ranges/categories actually contain, before creating anything.
+	totalCards, err := database.CountCardsInDecksForRanges(deckIds, ranges, excludedCategoryIds)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to count cards for the selected decks"))
@@ -137,7 +146,7 @@ func Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Initialize draw pile with cards from decks (cards use authored years)
-	if err := database.InitializeTimelineTriviaDrawPile(gameId, deckIds); err != nil {
+	if err := database.InitializeTimelineTriviaDrawPile(gameId, deckIds, excludedCategoryIds); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to initialize draw pile"))
 		return
@@ -674,10 +683,10 @@ func GetPlayers(w http.ResponseWriter, r *http.Request) {
 
 // CardCount returns, as plain text, how many cards across the given decks
 // would end up in the draw pile — restricted to the given year range(s) if
-// any are provided, or every year otherwise. Used by the lobby-creation
-// form for a live estimate: called once with every currently-entered range
-// for the "Select Decks" total, and once per range (with just that range)
-// for each range row's own count.
+// any are provided, or every year otherwise, and excluding any given
+// categories. Used by the lobby-creation form for a live estimate: called
+// once with every currently-entered range for the "Select Decks" total, and
+// once per range (with just that range) for each range row's own count.
 func CardCount(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -718,7 +727,15 @@ func CardCount(w http.ResponseWriter, r *http.Request) {
 		ranges = append(ranges, database.TimelineTriviaYearRange{FromYear: from, ToYear: to})
 	}
 
-	count, err := database.CountCardsInDecksForRanges(deckIds, ranges)
+	excludedCategoryIdStrings := r.Form["excludedCategoryId"]
+	excludedCategoryIds := make([]uuid.UUID, 0, len(excludedCategoryIdStrings))
+	for _, s := range excludedCategoryIdStrings {
+		if id, err := uuid.Parse(s); err == nil {
+			excludedCategoryIds = append(excludedCategoryIds, id)
+		}
+	}
+
+	count, err := database.CountCardsInDecksForRanges(deckIds, ranges, excludedCategoryIds)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("0"))

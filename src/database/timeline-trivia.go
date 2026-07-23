@@ -221,22 +221,18 @@ func CreateTimelineTriviaLobby(name string, message string, password string) (uu
 	return gsDatabase.CreateLobby(name, message, password)
 }
 
-// InitializeTimelineTriviaDrawPile populates the draw pile with cards from decks
-// Cards must have a year in their text (extracted via regex)
-func InitializeTimelineTriviaDrawPile(gameId uuid.UUID, deckIds []uuid.UUID) error {
+// InitializeTimelineTriviaDrawPile populates the draw pile with cards from
+// decks, excluding any card whose category is in excludedCategoryIds (empty
+// = every category included). Cards must have an authored year.
+func InitializeTimelineTriviaDrawPile(gameId uuid.UUID, deckIds []uuid.UUID, excludedCategoryIds []uuid.UUID) error {
 	if len(deckIds) == 0 {
 		return errors.New("no decks provided")
 	}
 
-	// Build placeholders for deck IDs
-	placeholders := ""
-	args := make([]interface{}, 0, len(deckIds)+1)
+	deckPlaceholders := strings.TrimSuffix(strings.Repeat("?,", len(deckIds)), ",")
+	args := make([]interface{}, 0, len(deckIds)+1+len(excludedCategoryIds))
 	args = append(args, gameId)
-	for i, deckId := range deckIds {
-		if i > 0 {
-			placeholders += ", "
-		}
-		placeholders += "?"
+	for _, deckId := range deckIds {
 		args = append(args, deckId)
 	}
 
@@ -245,9 +241,16 @@ func InitializeTimelineTriviaDrawPile(gameId uuid.UUID, deckIds []uuid.UUID) err
 		INSERT INTO TIMELINE_TRIVIA_DRAW_PILE (ID, TIMELINE_TRIVIA_GAME_ID, CARD_ID, CARD_YEAR)
 		SELECT UUID(), ?, C.ID, C.CARD_YEAR
 		FROM CARD C
-		WHERE C.DECK_ID IN (` + placeholders + `)
+		WHERE C.DECK_ID IN (` + deckPlaceholders + `)
 			AND C.CARD_YEAR IS NOT NULL
 	`
+	if len(excludedCategoryIds) > 0 {
+		categoryPlaceholders := strings.TrimSuffix(strings.Repeat("?,", len(excludedCategoryIds)), ",")
+		sqlString += " AND (C.CATEGORY_ID IS NULL OR C.CATEGORY_ID NOT IN (" + categoryPlaceholders + "))"
+		for _, categoryId := range excludedCategoryIds {
+			args = append(args, categoryId)
+		}
+	}
 	return execute(sqlString, args...)
 }
 
@@ -324,16 +327,18 @@ func ApplyYearRangeFilter(gameId uuid.UUID) error {
 // CountCardsInDecksForRanges counts how many cards across the given decks
 // would end up in the draw pile: those with a non-NULL year, further
 // restricted to the given ranges if any are provided (matching
-// ApplyYearRangeFilter's semantics — no ranges means every year is allowed).
-// Used for the live estimate shown while setting up a lobby.
-func CountCardsInDecksForRanges(deckIds []uuid.UUID, ranges []TimelineTriviaYearRange) (int, error) {
+// ApplyYearRangeFilter's semantics — no ranges means every year is allowed)
+// and excluding any card whose category is in excludedCategoryIds (empty =
+// every category included). Used for the live estimate shown while setting
+// up a lobby.
+func CountCardsInDecksForRanges(deckIds []uuid.UUID, ranges []TimelineTriviaYearRange, excludedCategoryIds []uuid.UUID) (int, error) {
 	if len(deckIds) == 0 {
 		return 0, nil
 	}
 
 	deckPlaceholders := strings.TrimSuffix(strings.Repeat("?,", len(deckIds)), ",")
 
-	args := make([]interface{}, 0, len(deckIds)+2*len(ranges))
+	args := make([]interface{}, 0, len(deckIds)+2*len(ranges)+len(excludedCategoryIds))
 	for _, id := range deckIds {
 		args = append(args, id)
 	}
@@ -352,6 +357,13 @@ func CountCardsInDecksForRanges(deckIds []uuid.UUID, ranges []TimelineTriviaYear
 		}
 		sqlString += " AND (" + strings.Join(rangeClauses, " OR ") + ")"
 	}
+	if len(excludedCategoryIds) > 0 {
+		categoryPlaceholders := strings.TrimSuffix(strings.Repeat("?,", len(excludedCategoryIds)), ",")
+		sqlString += " AND (CATEGORY_ID IS NULL OR CATEGORY_ID NOT IN (" + categoryPlaceholders + "))"
+		for _, categoryId := range excludedCategoryIds {
+			args = append(args, categoryId)
+		}
+	}
 
 	rows, err := query(sqlString, args...)
 	if err != nil {
@@ -368,6 +380,47 @@ func CountCardsInDecksForRanges(deckIds []uuid.UUID, ranges []TimelineTriviaYear
 	}
 
 	return count, nil
+}
+
+// GetDeckCardCounts returns, for each given deck, how many of its cards have
+// an authored year (and so would end up in a draw pile), keyed by deck id.
+// Decks with no such cards are simply absent from the result.
+func GetDeckCardCounts(deckIds []uuid.UUID) (map[uuid.UUID]int, error) {
+	result := make(map[uuid.UUID]int, len(deckIds))
+	if len(deckIds) == 0 {
+		return result, nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(deckIds)), ",")
+	args := make([]interface{}, 0, len(deckIds))
+	for _, id := range deckIds {
+		args = append(args, id)
+	}
+
+	sqlString := `
+		SELECT DECK_ID, COUNT(*)
+		FROM CARD
+		WHERE DECK_ID IN (` + placeholders + `)
+			AND CARD_YEAR IS NOT NULL
+		GROUP BY DECK_ID
+	`
+	rows, err := query(sqlString, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id uuid.UUID
+		var count int
+		if err := rows.Scan(&id, &count); err != nil {
+			log.Println(err)
+			return nil, errors.New("failed to scan row in query results")
+		}
+		result[id] = count
+	}
+
+	return result, nil
 }
 
 // DrawTimelineTriviaCard draws a random card from the draw pile and sets it as current
