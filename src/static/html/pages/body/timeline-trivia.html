@@ -18,6 +18,11 @@
                 <span class="info-stat" id="draw-pile-count">Remaining: <strong>--</strong></span>
             </div>
         </div>
+        <div
+            id="lobby-message-banner"
+            class="lobby-message-banner"
+            {{if not .Lobby.Message.Valid}}style="display: none;"{{end}}
+        >{{.Lobby.Message.String}}</div>
         {{if .YearRanges}}
         <div class="header-year-ranges">
             <span class="year-ranges-label">Years:</span>
@@ -55,7 +60,7 @@
             hx-target="#timeline-trivia-message">
             Start Game
         </button>
-        <div id="timeline-trivia-message"></div>
+        <div id="timeline-trivia-message" class="wrap-new-lines"></div>
         {{else if eq .Game.GameStatus "finished"}}
         {{if .Game.WinnerId.Valid}}
         <p class="winner-text">🎉 Winner: <strong>{{.WinnerName}}</strong></p>
@@ -66,9 +71,9 @@
             Start New Game
         </button>
         <a href="/timeline-trivia/lobbies" class="btn-link">Back to Games</a>
-        <div id="timeline-trivia-message"></div>
+        <div id="timeline-trivia-message" class="wrap-new-lines"></div>
         {{else}}
-        <div id="timeline-trivia-message"></div>
+        <div id="timeline-trivia-message" class="wrap-new-lines"></div>
         {{end}}
     </div>
 </div>
@@ -112,6 +117,7 @@
     <form
         hx-put="/api/timeline-trivia/{{.Lobby.Id}}/message"
         hx-target="find .htmx-result"
+        hx-on::after-request="if (event.detail.successful) document.getElementById('lobby-message-edit-dialog').close()"
     >
         <input
             type="text"

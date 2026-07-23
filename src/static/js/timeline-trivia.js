@@ -82,6 +82,13 @@ function initTimelineTriviaWebSocket(lobbyId, playerId) {
             return;
         }
 
+        // Handle lobby message updates (shown persistently under the lobby name)
+        if (messageText.startsWith("lobbyMessage:")) {
+            const lobbyMessage = messageText.substring("lobbyMessage:".length);
+            updateLobbyMessageBanner(lobbyMessage);
+            return;
+        }
+
         // Default: treat as chat message
         addChatMessage(messageText);
     };
@@ -153,6 +160,13 @@ function addChatMessage(message) {
     // Shared renderer: parses <blue>/<green>/<red>/</> color tokens, timestamps,
     // and trims history (see gameshell-framework /gs/js/chat.js).
     gsChat.append(document.getElementById("timeline-trivia-chat-messages"), message);
+}
+
+function updateLobbyMessageBanner(message) {
+    const banner = document.getElementById("lobby-message-banner");
+    if (!banner) return;
+    banner.textContent = message;
+    banner.style.display = message ? "" : "none";
 }
 
 function showAlert(message) {

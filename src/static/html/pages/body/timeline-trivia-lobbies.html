@@ -50,6 +50,21 @@
         </div>
         <br />
         <details>
+            <summary>Lobby Message (optional)</summary>
+            <div class="form-input">
+                <label for="createTimelineTriviaMessage">Message</label>
+                <input
+                    type="text"
+                    id="createTimelineTriviaMessage"
+                    name="message"
+                    maxlength="255"
+                    placeholder="Shown under the lobby name to everyone"
+                    autocomplete="off"
+                />
+            </div>
+        </details>
+        <br />
+        <details>
             <summary>Password (optional)</summary>
             <div class="form-input">
                 <label for="createTimelineTriviaPassword">Password</label>
@@ -66,6 +81,14 @@
         <br />
         <details open>
             <summary>Select Decks <span id="deck-total-count" style="font-weight: normal; font-size: 0.85em; opacity: 0.8;"></span></summary>
+            <div style="padding: 10px 10px 0;">
+                <input
+                    type="checkbox"
+                    id="deck-select-all"
+                    onchange="toggleAllDecks(this.checked)"
+                />
+                <label for="deck-select-all"><strong>Select All</strong></label>
+            </div>
             <div style="max-height: 200px; overflow-y: auto; padding: 10px;">
                 {{range .Decks}}
                 <div>
@@ -74,7 +97,8 @@
                         id="deck-{{.Id}}"
                         name="deckId"
                         value="{{.Id}}"
-                        onchange="scheduleCardCountRecalc()"
+                        class="deck-checkbox"
+                        onchange="syncSelectAllDecks(); scheduleCardCountRecalc();"
                     />
                     <label for="deck-{{.Id}}">{{.Name}}</label>
                 </div>
@@ -138,6 +162,25 @@
 
     function getSelectedDeckIds() {
         return Array.from(document.querySelectorAll('input[name="deckId"]:checked')).map((el) => el.value);
+    }
+
+    function toggleAllDecks(checked) {
+        document.querySelectorAll(".deck-checkbox").forEach((el) => {
+            el.checked = checked;
+        });
+        document.getElementById("deck-select-all").indeterminate = false;
+        scheduleCardCountRecalc();
+    }
+
+    // Keeps the "Select All" checkbox in sync (checked/unchecked/indeterminate)
+    // whenever an individual deck checkbox changes.
+    function syncSelectAllDecks() {
+        const selectAllEl = document.getElementById("deck-select-all");
+        if (!selectAllEl) return;
+        const deckEls = Array.from(document.querySelectorAll(".deck-checkbox"));
+        const checkedCount = deckEls.filter((el) => el.checked).length;
+        selectAllEl.checked = deckEls.length > 0 && checkedCount === deckEls.length;
+        selectAllEl.indeterminate = checkedCount > 0 && checkedCount < deckEls.length;
     }
 
     function cardCountLabel(count) {

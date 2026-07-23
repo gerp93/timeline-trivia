@@ -57,6 +57,7 @@ func Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	password := r.FormValue("password")
+	message := r.FormValue("message")
 
 	cardsToWin := 5
 	if cardsToWinStr := r.FormValue("cardsToWin"); cardsToWinStr != "" {
@@ -120,7 +121,7 @@ func Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the lobby with game_type = 'timeline-trivia'
-	lobbyId, err := database.CreateTimelineTriviaLobby(name, password)
+	lobbyId, err := database.CreateTimelineTriviaLobby(name, message, password)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to create lobby"))
@@ -356,7 +357,10 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		))
 		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("Incorrect. Everyone missed — card discarded."))
+		_, _ = w.Write([]byte(fmt.Sprintf(
+			"Incorrect. Everyone missed — card discarded.\n%s: %s",
+			database.FormatYear(revealedCard.CardYear), revealedCard.CardText,
+		)))
 		return
 	}
 
@@ -807,5 +811,6 @@ func SetLobbyMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("<green>%s</>: Lobby message set to %s", player.Name, message))
+	gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("<green>%s</>: Lobby message updated", player.Name))
+	gsWebsocket.LobbyBroadcast(lobbyId, "lobbyMessage:"+message)
 }

@@ -217,8 +217,8 @@ func CreateTimelineTriviaGame(lobbyId uuid.UUID, cardsToWin int) (uuid.UUID, err
 
 // CreateTimelineTriviaLobby creates a new lobby for TimelineTrivia, delegating base
 // lobby creation to the gameshell framework.
-func CreateTimelineTriviaLobby(name string, password string) (uuid.UUID, error) {
-	return gsDatabase.CreateLobby(name, "", password)
+func CreateTimelineTriviaLobby(name string, message string, password string) (uuid.UUID, error) {
+	return gsDatabase.CreateLobby(name, message, password)
 }
 
 // InitializeTimelineTriviaDrawPile populates the draw pile with cards from decks
