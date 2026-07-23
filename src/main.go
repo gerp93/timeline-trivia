@@ -44,7 +44,7 @@ func main() {
 		},
 		AdminPaths: []string{"/users", "/categories"},
 	})
-	gsDatabase.SetEnvPrefix("TIMELINE_TRIVIA")
+	gsDatabase.SetEnvVarPrefix("TIMELINE_TRIVIA")
 
 	db, err := gsDatabase.CreateDatabaseConnection()
 	dbConnectAttemptCount := 0
