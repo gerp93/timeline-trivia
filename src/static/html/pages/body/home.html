@@ -8,34 +8,34 @@
     <div id="home-buttons">
         {{if .LoggedIn}}
         <div>
-            <button onclick="window.location.href='/timeline-trivia/lobbies'">Game Lobbies</button>
+            <button data-href="/timeline-trivia/lobbies">Game Lobbies</button>
         </div>
         <div>
-            <button onclick="window.location.href='/decks'">Card Decks</button>
+            <button data-href="/decks">Card Decks</button>
         </div>
         <div>
-            <button onclick="window.location.href='/stats'">Statistics</button>
+            <button data-href="/stats">Statistics</button>
         </div>
         <div>
-            <button onclick="window.location.href='/account'">Account</button>
+            <button data-href="/account">Account</button>
         </div>
         {{else}}
         <div>
-            <button onclick="window.location.href='/login'">Login</button>
+            <button data-href="/login">Login</button>
         </div>
         {{end}}
         <div>
-            <button onclick="window.location.href='/about'">About</button>
+            <button data-href="/about">About</button>
         </div>
         {{if .User.IsAdmin}}
         <div>
-            <button onclick="window.location.href='/users'">Users</button>
+            <button data-href="/users">Users</button>
         </div>
         <div>
-            <button onclick="window.location.href='/categories'">Categories</button>
+            <button data-href="/categories">Categories</button>
         </div>
         <div>
-            <button onclick="window.location.href='/flagged-cards'">Flagged Cards</button>
+            <button data-href="/flagged-cards">Flagged Cards</button>
         </div>
         {{end}}
     </div>

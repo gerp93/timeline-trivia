@@ -14,6 +14,7 @@
         integrity="sha384-yWakaGAFicqusuwOYEmoRjLNOC+6OFsdmwC2lbGQaRELtuVEqNzt11c2J711DeCZ"
         crossorigin="anonymous"
     ></script>
+    <script src="/gs/js/nav.js"></script>
     <script src="/static/js/global.js"></script>
     <link
         rel="icon"
@@ -45,7 +46,9 @@
         <div style="text-align: left">
             <span
                 class="clickable"
-                onclick="location.href='/'"
+                data-href="/"
+                role="link"
+                tabindex="0"
                 title="Go to Home Page"
             >
                 Timeline Trivia
@@ -68,7 +71,9 @@
         </div>
         <div
             class="top-bar-menu-link"
-            onclick="location.href='/account'"
+            data-href="/account"
+            role="link"
+            tabindex="0"
         >
             Account
             <i class="bi bi-gear"></i>
@@ -84,7 +89,9 @@
         {{else}}
         <div
             class="top-bar-menu-link"
-            onclick="location.href='/login'"
+            data-href="/login"
+            role="link"
+            tabindex="0"
         >
             Login
             <i class="bi bi-box-arrow-in-left"></i>
