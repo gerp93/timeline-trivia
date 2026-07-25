@@ -8,34 +8,34 @@
     <div id="home-buttons">
         {{if .LoggedIn}}
         <div>
-            <button data-href="/timeline-trivia/lobbies">Game Lobbies</button>
+            <a href="/timeline-trivia/lobbies"><button>Game Lobbies</button></a>
         </div>
         <div>
-            <button data-href="/decks">Card Decks</button>
+            <a href="/decks"><button>Card Decks</button></a>
         </div>
         <div>
-            <button data-href="/stats">Statistics</button>
+            <a href="/stats"><button>Statistics</button></a>
         </div>
         <div>
-            <button data-href="/account">Account</button>
+            <a href="/account"><button>Account</button></a>
         </div>
         {{else}}
         <div>
-            <button data-href="/login">Login</button>
+            <a href="/login"><button>Login</button></a>
         </div>
         {{end}}
         <div>
-            <button data-href="/about">About</button>
+            <a href="/about"><button>About</button></a>
         </div>
         {{if .User.IsAdmin}}
         <div>
-            <button data-href="/users">Users</button>
+            <a href="/users"><button>Users</button></a>
         </div>
         <div>
-            <button data-href="/categories">Categories</button>
+            <a href="/categories"><button>Categories</button></a>
         </div>
         <div>
-            <button data-href="/flagged-cards">Flagged Cards</button>
+            <a href="/flagged-cards"><button>Flagged Cards</button></a>
         </div>
         {{end}}
     </div>

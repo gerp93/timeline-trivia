@@ -56,6 +56,36 @@ This is a Go-based web application using:
 - Avoid deeply nested structures when possible
 - Use Bootstrap Icons via classes (e.g., `bi bi-pencil`)
 
+### 5a. Navigation is always a real `<a href>`
+**Anything that navigates to another page MUST be wrapped in an anchor.**
+Never use `onclick="location.href='...'"`, and never add a JavaScript
+click-interceptor for this. Only a real anchor gives ctrl/cmd-click and
+middle-click to open a new tab, right-click → "Open in new tab", the hover
+URL preview, and correct link semantics for screen readers — a script cannot
+reproduce all of that.
+
+❌ **Wrong** (ctrl+click just navigates in place):
+```html
+<button onclick="window.location.href='/decks'">Card Decks</button>
+```
+
+✅ **Correct** (wrap the visual element in an anchor):
+```html
+<a href="/decks"><button>Card Decks</button></a>
+```
+
+✅ **Correct** (top-bar menu row; `no-style` strips the anchor's own
+underline/color so the row looks unchanged):
+```html
+<a href="/account" class="no-style">
+    <div class="top-bar-menu-link">Account <i class="bi bi-gear"></i></div>
+</a>
+```
+
+This does not apply to buttons that perform an action rather than navigate
+(`hx-post`, `hx-put`, `hx-delete`, opening a dialog) — those stay plain
+buttons. External links additionally take `target="_blank"`.
+
 ### 6. State Management
 - **Server-side state is the source of truth**
 - Use hidden form inputs to maintain state when necessary
@@ -125,8 +155,10 @@ document.getElementById('pageSize').value = pageSize;
 1. **Check existing patterns** - look at similar features in the codebase
 2. **Define CSS classes** - create reusable classes with theme support
 3. **Use HTMX** - prefer HTMX over JavaScript for server interactions
-4. **Test all themes** - verify the feature works with all 8 theme variations
-5. **Keep it simple** - follow the existing code organization and style
+4. **Wrap navigation in `<a href>`** - every new link/button that changes page
+   (see 5a); ctrl+click must open a new tab
+5. **Test all themes** - verify the feature works with all 8 theme variations
+6. **Keep it simple** - follow the existing code organization and style
 
 ## Theme Variables Reference
 

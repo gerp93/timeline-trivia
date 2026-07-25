@@ -115,6 +115,13 @@ summary {
     cursor: pointer;
 }
 
+/* Wrapper for making a button or menu row a real link without the anchor's
+   own styling showing through (see CLAUDE.md — navigation is always <a href>). */
+a.no-style {
+    text-decoration: none;
+    color: inherit;
+}
+
 .clickable {
     cursor: pointer;
 }

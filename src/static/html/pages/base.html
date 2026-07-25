@@ -14,7 +14,6 @@
         integrity="sha384-yWakaGAFicqusuwOYEmoRjLNOC+6OFsdmwC2lbGQaRELtuVEqNzt11c2J711DeCZ"
         crossorigin="anonymous"
     ></script>
-    <script src="/gs/js/nav.js"></script>
     <script src="/static/js/global.js"></script>
     <link
         rel="icon"
@@ -44,15 +43,15 @@
 >
     <div id="top-bar">
         <div style="text-align: left">
-            <span
-                class="clickable"
-                data-href="/"
-                role="link"
-                tabindex="0"
+            <a
+                href="/"
+                class="no-style"
                 title="Go to Home Page"
             >
-                Timeline Trivia
-            </span>
+                <span class="clickable">
+                    Timeline Trivia
+                </span>
+            </a>
         </div>
         <div style="text-align: right">
             <span
@@ -69,15 +68,15 @@
             Playing As: {{.User.Name}}
             <i class="bi bi-person"></i>
         </div>
-        <div
-            class="top-bar-menu-link"
-            data-href="/account"
-            role="link"
-            tabindex="0"
+        <a
+            href="/account"
+            class="no-style"
         >
-            Account
-            <i class="bi bi-gear"></i>
-        </div>
+            <div class="top-bar-menu-link">
+                Account
+                <i class="bi bi-gear"></i>
+            </div>
+        </a>
         <div
             class="top-bar-menu-link"
             hx-post="/api/user/logout"
@@ -87,15 +86,15 @@
             <i class="bi bi-box-arrow-left"></i>
         </div>
         {{else}}
-        <div
-            class="top-bar-menu-link"
-            data-href="/login"
-            role="link"
-            tabindex="0"
+        <a
+            href="/login"
+            class="no-style"
         >
-            Login
-            <i class="bi bi-box-arrow-in-left"></i>
-        </div>
+            <div class="top-bar-menu-link">
+                Login
+                <i class="bi bi-box-arrow-in-left"></i>
+            </div>
+        </a>
         {{end}}
         <div
             class="top-bar-menu-link"

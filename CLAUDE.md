@@ -180,6 +180,29 @@ connection, and if this player is the only client, the framework deletes the
 (now-empty) lobby before the reload finishes, destroying the game that was
 just started/reset.
 
+## HTML conventions
+
+**Navigation is always a real `<a href>`.** Anything that takes the user to
+another page must be wrapped in an anchor — never
+`onclick="location.href='...'"`, and never a JavaScript click-interceptor.
+Only a real anchor gets ctrl/cmd-click and middle-click to open a new tab,
+right-click → "Open in new tab", the hover URL preview, and link semantics for
+screen readers; a script cannot reproduce all of that, and this is the same
+convention card-judge follows.
+
+```html
+<a href="/decks"><button>Card Decks</button></a>
+<a href="/timeline-trivia/{{.Id}}"><button class="btn-small">Join</button></a>
+<a href="/account" class="no-style">
+    <div class="top-bar-menu-link">Account <i class="bi bi-gear"></i></div>
+</a>
+```
+
+`a.no-style` (`static/css/global.css`) strips the anchor's underline/color so
+a wrapped menu row looks unchanged. Buttons that perform an *action* rather
+than navigate (`hx-post`/`hx-put`/`hx-delete`, opening a `<dialog>`) stay
+plain buttons. External links additionally take `target="_blank"`.
+
 ## Build / run / verify
 
 - Build: `cd src && go build ./...`.
