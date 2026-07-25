@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -122,5 +123,77 @@ func TestWinCelebrationUpload(t *testing.T) {
 	t.Logf("141-char message status=%d body=%q", mrec.Code, mrec.Body.String())
 	if mrec.Code != http.StatusBadRequest {
 		t.Errorf("expected 141-char message rejected, got %d", mrec.Code)
+	}
+}
+
+// Regression test for a real GIF (routinely well over 60 KB) appearing to
+// silently fail on upload. httptest.NewRecorder (used above) never touches a
+// real socket, so it can't reproduce this: the old code capped
+// http.MaxBytesReader/ParseMultipartForm at ~64 KB, the same size as the
+// business rule, so any legitimately larger file tripped that cap mid-read
+// and Go aborted the connection while the client was still writing it — a
+// TCP reset the browser reports as net::ERR_CONNECTION_RESET, not the
+// intended 400 response. This drives the real handler over a real
+// httptest.NewServer loopback connection with an oversized-but-realistic
+// (300 KB) file and asserts a clean HTTP response comes back rather than a
+// transport error.
+func TestWinCelebrationOversizedUploadOverRealConnection(t *testing.T) {
+	if !strings.HasPrefix(os.Getenv("TIMELINE_TRIVIA_SQL_DATABASE"), "tt_e2e") {
+		t.Skip("set TIMELINE_TRIVIA_SQL_DATABASE=tt_e2e")
+	}
+	gsDatabase.SetEnvVarPrefix("TIMELINE_TRIVIA")
+	gsAuth.SetCookiePrefix("CARD-TIMELINE")
+	if _, err := gsDatabase.CreateDatabaseConnection(); err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	for _, f := range gsStatic.SQLFiles {
+		if err := gsDatabase.RunFile(f); err != nil {
+			t.Fatalf("schema %s: %v", f, err)
+		}
+	}
+	if err := gsDatabase.CreateUser("oversized_upload_user", "unused", true); err != nil {
+		t.Logf("create user (may already exist): %v", err)
+	}
+	userId, err := gsDatabase.GetUserIdByName("oversized_upload_user")
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("PUT /api/user/{userId}/win-gif", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.SetWinGif)))
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	cookieRec := httptest.NewRecorder()
+	gsAuth.SetUserId(cookieRec, userId)
+
+	// 300 KB: bigger than the old ~64 KB cap, well under the new 10 MB cap,
+	// and still correctly over the 60 KB rule — must come back as a clean
+	// 400, not a broken connection.
+	oversized := append([]byte("GIF89a"), bytes.Repeat([]byte{0x42}, 300*1024)...)
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("winGif", "big.gif")
+	_, _ = fw.Write(oversized)
+	_ = mw.Close()
+
+	req, err := http.NewRequest(http.MethodPut, server.URL+"/api/user/"+userId.String()+"/win-gif", &body)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	for _, c := range cookieRec.Result().Cookies() {
+		req.AddCookie(c)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("oversized upload should get a clean HTTP response, got a transport error instead: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBody, _ := io.ReadAll(resp.Body)
+	t.Logf("status=%d body=%q", resp.StatusCode, string(respBody))
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for a 300 KB file, got %d: %s", resp.StatusCode, respBody)
 	}
 }
