@@ -45,11 +45,86 @@
 
 .header-stats {
     display: flex;
+    align-items: center;
     gap: 15px;
 }
 
 .info-stat {
     font-size: 0.85em;
+}
+
+/* Deck breakdown tooltip. Pure CSS reveal on hover or keyboard focus, so it
+   needs no JS and stays reachable without a mouse. */
+.deck-info-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.deck-info-icon {
+    font-size: 0.95em;
+    cursor: help;
+    opacity: 0.7;
+}
+
+.deck-info-icon:hover,
+.deck-info-icon:focus {
+    opacity: 1;
+}
+
+.deck-info-tooltip {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 50;
+    min-width: 200px;
+    max-width: 320px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--color-accent-blue);
+    background-color: var(--color-bg);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    font-size: 0.85em;
+    text-align: left;
+    white-space: normal;
+}
+
+.deck-info-wrapper:hover .deck-info-tooltip,
+.deck-info-wrapper:focus-within .deck-info-tooltip {
+    display: block;
+}
+
+.deck-info-title {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.deck-info-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.deck-info-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 1px 0;
+}
+
+.deck-info-count {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.7;
+}
+
+.deck-info-footnote {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.85em;
+    font-style: italic;
+    opacity: 0.6;
 }
 
 .lobby-message-banner {
@@ -147,16 +222,46 @@
     text-transform: uppercase;
 }
 
-.current-event-category {
+.current-event-tags {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.current-event-category,
+.current-event-deck {
     display: inline-block;
     font-size: 10px;
     font-weight: bold;
     letter-spacing: 0.5px;
     text-transform: uppercase;
     padding: 2px 8px;
-    margin-bottom: 6px;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.2);
+}
+
+/* Deck reads as secondary to the category it sits beside */
+.current-event-deck {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-skip-remove {
+    margin: 8px 0 0 0;
+    padding: 3px 12px;
+    font-size: 11px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    background: rgba(0, 0, 0, 0.2);
+    color: white;
+    cursor: pointer;
+}
+
+.btn-skip-remove:hover {
+    background: var(--color-accent-red);
+    border-color: var(--color-accent-red);
 }
 
 .current-event-text {
@@ -208,8 +313,9 @@
     padding: 0 5px;
 }
 
-/* Player Timeline Row — every row gets identical treatment; whose turn it
-   is lives in .whose-turn-banner (above the list), not per-row styling. */
+/* Player Timeline Row. Rows are rendered in turn order and never reorder
+   mid-game, so the current player is marked in place rather than hoisted to
+   the top — players can rely on their own row staying put. */
 .player-timeline-row {
     display: flex;
     align-items: stretch;
@@ -219,6 +325,16 @@
     background-color: var(--color-bg-hover);
     padding: 6px 10px;
     min-height: 0;
+}
+
+.player-timeline-row.is-current {
+    border-color: var(--color-accent-blue);
+    background-color: color-mix(in srgb, var(--color-accent-blue) 12%, var(--color-bg-hover));
+    box-shadow: inset 4px 0 0 var(--color-accent-blue);
+}
+
+.player-timeline-row.is-current .player-info-column .player-name {
+    color: var(--color-accent-blue);
 }
 
 /* Fixed-width info column, always pinned to the right of the row */
@@ -313,6 +429,13 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+/* The single most recently won card in the game, wherever it landed */
+.timeline-card-box.last-placed {
+    border-color: var(--color-accent-green);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-green) 45%, transparent),
+        0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 .dummy-card-box {
@@ -529,6 +652,25 @@
     font-size: 0.6em;
     opacity: 0.9;
     margin-top: 10px;
+}
+
+/* Winner's personal celebration (set on the account page) */
+.timeline-trivia-popup .popup-gif {
+    display: block;
+    max-width: 240px;
+    max-height: 240px;
+    margin: 12px auto 0 auto;
+    border-radius: 8px;
+}
+
+.timeline-trivia-popup .popup-celebration-message {
+    max-width: 340px;
+    margin: 8px auto 0 auto;
+    font-size: 0.5em;
+    font-weight: normal;
+    line-height: 1.35;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
 }
 
 @keyframes popupFadeIn {

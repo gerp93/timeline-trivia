@@ -1,0 +1,14 @@
+{{if .}}
+<div class="deck-info-title">Decks in play</div>
+<ul class="deck-info-list">
+    {{range .}}
+    <li>
+        <span class="deck-info-name">{{.Name}}</span>
+        <span class="deck-info-count">{{.RemainingCount}} / {{.TotalCount}}</span>
+    </li>
+    {{end}}
+</ul>
+<div class="deck-info-footnote">remaining / contributed</div>
+{{else}}
+<div class="deck-info-title">No decks in play yet</div>
+{{end}}

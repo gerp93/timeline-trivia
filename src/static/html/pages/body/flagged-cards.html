@@ -1,0 +1,127 @@
+{{define "body"}}
+<h2>Flagged Cards</h2>
+<p>
+    Cards players pulled out of play mid-game with &ldquo;Skip &amp; Remove&rdquo;.
+    A flagged card is excluded from every draw pile until it is resolved here
+    &mdash; accept it back as-is, fix it and accept it, or delete it for good.
+</p>
+{{if eq (len .Cards) 0}}
+No cards are waiting for review.
+{{else}}
+<table>
+    <thead>
+        <tr>
+            <th>Card</th>
+            <th>Year</th>
+            <th>Category</th>
+            <th>Deck</th>
+            <th>Created</th>
+            <th>Changed</th>
+            <th>Flagged By</th>
+            <th>Flagged On</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .Cards}}
+        {{$card := .}}
+        <tr>
+            <td class="wrap-new-lines">{{.Text}}</td>
+            <td>{{formatNullYear .Year}}</td>
+            <td>{{if .CategoryName.Valid}}{{.CategoryName.String}}{{else}}&mdash;{{end}}</td>
+            <td>{{.DeckName}}</td>
+            <td>{{.CreatedOnDate.Format "2006-01-02"}}</td>
+            <td>{{.ChangedOnDate.Format "2006-01-02"}}</td>
+            <td>{{if .FlaggedByName.Valid}}{{.FlaggedByName.String}}{{else}}&mdash;{{end}}</td>
+            <td>{{.FlaggedOnDate.Format "2006-01-02 15:04"}}</td>
+            <td>
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <span
+                        title="Accept as-is — returns this card to the draw pile"
+                        class="bi bi-check-circle clickable"
+                        hx-post="/api/card/{{.Id}}/unflag"
+                        hx-confirm="Accept this card back into the draw pile?"
+                    ></span>
+                    <span
+                        title="Edit and accept"
+                        class="bi bi-pencil clickable"
+                        onclick="document.getElementById('flagged-{{.Id}}-edit-dialog').showModal()"
+                    ></span>
+                    <span
+                        title="Delete permanently"
+                        class="bi bi-trash clickable"
+                        hx-delete="/api/card/{{.Id}}"
+                        hx-confirm="Permanently delete this card from its deck? This cannot be undone."
+                    ></span>
+                </div>
+                <dialog id="flagged-{{.Id}}-edit-dialog">
+                    <div style="display: grid; grid-auto-flow: column">
+                        <div>
+                            <h3>Edit &amp; Accept</h3>
+                        </div>
+                        <div>
+                            <span
+                                class="bi bi-x-lg close-button"
+                                onclick="document.getElementById('flagged-{{.Id}}-edit-dialog').close()"
+                            ></span>
+                        </div>
+                    </div>
+                    <p>
+                        Saving fixes the card and returns it to the draw pile in
+                        one step.
+                    </p>
+                    <form
+                        hx-put="/api/card/{{.Id}}/flagged"
+                        hx-target="find .htmx-result"
+                    >
+                        <div class="form-input">
+                            <label for="text{{.Id}}">Text</label>
+                            <input
+                                type="text"
+                                id="text{{.Id}}"
+                                name="text"
+                                maxlength="510"
+                                value="{{.Text}}"
+                                required="required"
+                                autocomplete="off"
+                            />
+                            <label for="year{{.Id}}">Year (negative for B.C.E)</label>
+                            <input
+                                type="number"
+                                id="year{{.Id}}"
+                                name="year"
+                                value="{{if .Year.Valid}}{{.Year.Int64}}{{end}}"
+                                autocomplete="off"
+                            />
+                            <label for="category{{.Id}}">Category</label>
+                            <select
+                                id="category{{.Id}}"
+                                name="categoryId"
+                                autocomplete="off"
+                            >
+                                <option value="">-- No Category --</option>
+                                {{range $.Categories}}
+                                <option
+                                    value="{{.Id}}"
+                                    {{if and $card.CategoryId.Valid (eq (printf "%s" .Id) (printf "%s" $card.CategoryId.UUID))}}selected{{end}}
+                                >
+                                    {{.Name}}
+                                </option>
+                                {{end}}
+                            </select>
+                        </div>
+                        <br />
+                        <div class="htmx-result"></div>
+                        <input
+                            type="submit"
+                            value="Save &amp; Accept"
+                        />
+                    </form>
+                </dialog>
+            </td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{end}}
+{{end}}

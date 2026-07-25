@@ -1,6 +1,8 @@
 {{define "body"}}
 <link rel="stylesheet" href="/gs/css/chat.css" />
+<link rel="stylesheet" href="/gs/css/timer.css" />
 <script src="/gs/js/chat.js"></script>
+<script src="/gs/js/timer.js"></script>
 <script src="/static/js/timeline-trivia.js"></script>
 <link rel="stylesheet" href="/static/css/timeline-trivia.css" />
 
@@ -11,11 +13,40 @@
         <div class="header-top">
             <span class="lobby-name">
                 {{.Lobby.Name}}
-                <span class="bi bi-pencil clickable" onclick="document.getElementById('lobby-message-edit-dialog').showModal()"></span>
+                <span class="bi bi-pencil clickable" title="Edit Lobby Message" onclick="document.getElementById('lobby-message-edit-dialog').showModal()"></span>
+                <span class="bi bi-stopwatch clickable" title="Turn Timer" onclick="document.getElementById('turn-timer-dialog').showModal()"></span>
             </span>
             <div class="header-stats">
                 <span class="info-stat">Cards to win: <strong>{{.Game.CardsToWin}}</strong></span>
                 <span class="info-stat" id="draw-pile-count">Remaining: <strong>--</strong></span>
+                <!-- Hover/focus reveals which decks the draw pile was built from -->
+                <span class="deck-info-wrapper">
+                    <span
+                        class="bi bi-info-circle deck-info-icon"
+                        tabindex="0"
+                        role="button"
+                        aria-label="Which decks are in play"
+                    ></span>
+                    <span class="deck-info-tooltip" id="deck-info-tooltip">
+                        {{if .Decks}}
+                        <span class="deck-info-title">Decks in play</span>
+                        <ul class="deck-info-list">
+                            {{range .Decks}}
+                            <li>
+                                <span class="deck-info-name">{{.Name}}</span>
+                                <span class="deck-info-count">{{.RemainingCount}} / {{.TotalCount}}</span>
+                            </li>
+                            {{end}}
+                        </ul>
+                        <span class="deck-info-footnote">remaining / contributed</span>
+                        {{else}}
+                        <span class="deck-info-title">No decks in play yet</span>
+                        {{end}}
+                    </span>
+                </span>
+                {{if gt .TurnTimerSeconds 0}}
+                <span class="info-stat">Time: <span id="turn-timer" class="gs-timer"></span></span>
+                {{end}}
             </div>
         </div>
         <div
@@ -60,7 +91,6 @@
             hx-target="#timeline-trivia-message">
             Start Game
         </button>
-        <div id="timeline-trivia-message" class="wrap-new-lines"></div>
         {{else if eq .Game.GameStatus "finished"}}
         {{if .Game.WinnerId.Valid}}
         <p class="winner-text">🎉 Winner: <strong>{{.WinnerName}}</strong></p>
@@ -71,11 +101,14 @@
             Start New Game
         </button>
         <a href="/timeline-trivia/lobbies" class="btn-link">Back to Games</a>
-        <div id="timeline-trivia-message" class="wrap-new-lines"></div>
-        {{else}}
-        <div id="timeline-trivia-message" class="wrap-new-lines"></div>
         {{end}}
     </div>
+
+    <!-- Status line. Lives outside #timeline-trivia-controls (which gets
+         swapped wholesale on a game-status change) so it exists in every game
+         state and survives that swap: every client writes the outcome of every
+         guess here, not just the player who acted. -->
+    <div id="timeline-trivia-message" class="wrap-new-lines"></div>
 </div>
 
 <!-- Chat -->
@@ -132,9 +165,41 @@
     </form>
 </dialog>
 
+<dialog id="turn-timer-dialog">
+    <div style="display: grid; grid-auto-flow: column">
+        <h3>Turn Timer</h3>
+        <div>
+            <span class="bi bi-x-lg close-button" onclick="document.getElementById('turn-timer-dialog').close()"></span>
+        </div>
+    </div>
+    <p>
+        How long each player gets to place the current card. Running out just
+        passes the card on &mdash; no penalty.
+    </p>
+    <form
+        hx-put="/api/lobby/{{.Lobby.Id}}/turn-timer"
+        hx-target="find .htmx-result"
+        hx-on::after-request="if (event.detail.successful) document.getElementById('turn-timer-dialog').close()"
+    >
+        <div class="form-input">
+            <select name="turnTimerSeconds" autocomplete="off">
+                <option value="0" {{if eq .TurnTimerSeconds 0}}selected{{end}}>Off</option>
+                <option value="15" {{if eq .TurnTimerSeconds 15}}selected{{end}}>15 seconds</option>
+                <option value="30" {{if eq .TurnTimerSeconds 30}}selected{{end}}>30 seconds</option>
+                <option value="45" {{if eq .TurnTimerSeconds 45}}selected{{end}}>45 seconds</option>
+                <option value="60" {{if eq .TurnTimerSeconds 60}}selected{{end}}>60 seconds</option>
+                <option value="90" {{if eq .TurnTimerSeconds 90}}selected{{end}}>90 seconds</option>
+                <option value="120" {{if eq .TurnTimerSeconds 120}}selected{{end}}>120 seconds</option>
+            </select>
+        </div>
+        <input type="submit" value="Update" />
+        <div class="htmx-result"></div>
+    </form>
+</dialog>
+
 <script>
     // Initialize WebSocket for real-time updates
-    initTimelineTriviaWebSocket("{{.Lobby.Id}}", "{{.PlayerId}}");
+    initTimelineTriviaWebSocket("{{.Lobby.Id}}", "{{.PlayerId}}", {{.TurnTimerSeconds}});
 
     window.addEventListener("load", () => {
         const lobbyMessageDialog = document.getElementById("lobby-message-dialog");

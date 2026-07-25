@@ -9,7 +9,7 @@
     </div>
     {{end}}
     {{range $pIndex, $player := .AllTimelines}}
-    <div class="player-timeline-row {{if $player.IsMe}}is-me{{end}}">
+    <div class="player-timeline-row {{if $player.IsMe}}is-me{{end}} {{if $player.IsCurrent}}is-current{{end}}">
         <div class="timeline-horizontal">
             {{if eq (len $player.Timeline) 0}}
             {{if and $player.HasAttempt (eq $player.AttemptedPosition 0)}}
@@ -42,7 +42,7 @@
                 <div class="card-event-text">Guessed here</div>
             </div>
             {{end}}
-            <div class="timeline-card-box">
+            <div class="timeline-card-box{{if $card.IsLastPlaced}} last-placed{{end}}"{{if $card.IsLastPlaced}} title="Most recently won card"{{end}}>
                 <div class="card-year-badge{{if lt $card.CardYear 0}} bce{{end}}">{{formatYear $card.CardYear}}</div>
                 {{if $card.CategoryName.Valid}}
                 <div class="card-category-badge">{{$card.CategoryName.String}}</div>

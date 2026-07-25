@@ -1,6 +1,7 @@
 package apiPages
 
 import (
+	"database/sql"
 	"fmt"
 	"html/template"
 	"log"
@@ -84,14 +85,79 @@ func Account(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Metadata only — the GIF bytes are served separately by
+	// /api/user/{userId}/win-gif and never loaded into a page render.
+	winCelebration, err := gsDatabase.GetUserWinCelebration(basePageData.User.Id)
+	if err != nil {
+		log.Printf("[ERROR Account] Failed to get win celebration for user %s: %v", basePageData.User.Id, err)
+	}
+
 	type data struct {
 		gsApi.BasePageData
-		ThemeGroups []gsApi.ThemeGroup
+		ThemeGroups    []gsApi.ThemeGroup
+		WinCelebration gsDatabase.UserWinCelebration
+	}
+
+	_ = tmpl.ExecuteTemplate(w, "base", data{
+		BasePageData:   basePageData,
+		ThemeGroups:    gsApi.ThemeGroups,
+		WinCelebration: winCelebration,
+	})
+}
+
+// FlaggedCards is the admin review screen for cards players pulled out of
+// play mid-game ("skip and remove"). Flagged cards are excluded from every
+// draw pile until they are accepted, edited and accepted, or deleted here.
+func FlaggedCards(w http.ResponseWriter, r *http.Request) {
+	basePageData := gsApi.GetBasePageData(r)
+	basePageData.PageTitle = "Timeline Trivia - Flagged Cards"
+
+	cards, err := database.GetFlaggedCards()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get flagged cards"))
+		return
+	}
+
+	categories, err := database.GetCategories()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get categories"))
+		return
+	}
+
+	funcMap := template.FuncMap{
+		// Cards awaiting review may still be missing a year — that's often
+		// exactly why they were flagged.
+		"formatNullYear": func(year sql.NullInt64) string {
+			if !year.Valid {
+				return "—"
+			}
+			return database.FormatYear(int(year.Int64))
+		},
+	}
+
+	tmpl, err := template.New("base.html").Funcs(funcMap).ParseFS(
+		static.StaticFiles,
+		"html/pages/base.html",
+		"html/pages/body/flagged-cards.html",
+	)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to parse HTML"))
+		return
+	}
+
+	type data struct {
+		gsApi.BasePageData
+		Cards      []database.FlaggedCard
+		Categories []database.Category
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
 		BasePageData: basePageData,
-		ThemeGroups:  gsApi.ThemeGroups,
+		Cards:        cards,
+		Categories:   categories,
 	})
 }
 
@@ -537,7 +603,7 @@ func TimelineTriviaLobby(w http.ResponseWriter, r *http.Request) {
 	if err != nil || game.Id == uuid.Nil {
 		log.Printf("[INFO TimelineTriviaLobby] Game not found for lobby %s, auto-creating...", lobbyId)
 		// Auto-create the game with default settings
-		gameId, createErr := database.CreateTimelineTriviaGame(lobbyId, 5) // 5 cards to win default
+		gameId, createErr := database.CreateTimelineTriviaGame(lobbyId, 10) // cards to win default
 		if createErr != nil {
 			log.Printf("[ERROR TimelineTriviaLobby] Failed to auto-create game for lobby %s: %v", lobbyId, createErr)
 			http.Redirect(w, r, "/timeline-trivia/lobbies", http.StatusSeeOther)
@@ -579,6 +645,18 @@ func TimelineTriviaLobby(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[ERROR TimelineTriviaLobby] Failed to get year ranges for game %s: %v", game.Id, err)
 	}
 
+	// Which decks the draw pile was built from, for the header tooltip
+	decks, err := database.GetTimelineTriviaGameDecks(game.Id)
+	if err != nil {
+		log.Printf("[ERROR TimelineTriviaLobby] Failed to get decks for game %s: %v", game.Id, err)
+	}
+
+	// Per-turn countdown; 0 = off (framework lobby setting)
+	turnTimerSeconds, err := gsDatabase.GetLobbyTurnTimerSeconds(lobbyId)
+	if err != nil {
+		log.Printf("[ERROR TimelineTriviaLobby] Failed to get turn timer for lobby %s: %v", lobbyId, err)
+	}
+
 	funcMap := template.FuncMap{
 		"formatYear": database.FormatYear,
 	}
@@ -603,6 +681,8 @@ func TimelineTriviaLobby(w http.ResponseWriter, r *http.Request) {
 		IsMyTurn          bool
 		WinnerName        string
 		YearRanges        []database.TimelineTriviaYearRange
+		Decks             []database.TimelineTriviaDeckInfo
+		TurnTimerSeconds  int
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
@@ -614,6 +694,8 @@ func TimelineTriviaLobby(w http.ResponseWriter, r *http.Request) {
 		IsMyTurn:          isMyTurn,
 		WinnerName:        winnerName,
 		YearRanges:        yearRanges,
+		Decks:             decks,
+		TurnTimerSeconds:  turnTimerSeconds,
 	})
 }
 

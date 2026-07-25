@@ -1,9 +1,14 @@
 {{if .CardId}}
 <div class="current-event-banner">
     <div class="current-event-label">CURRENT EVENT</div>
-    {{if .CategoryName.Valid}}
-    <div class="current-event-category">{{.CategoryName.String}}</div>
-    {{end}}
+    <div class="current-event-tags">
+        {{if .CategoryName.Valid}}
+        <span class="current-event-category">{{.CategoryName.String}}</span>
+        {{end}}
+        {{if .DeckName}}
+        <span class="current-event-deck" title="Deck this card came from">{{.DeckName}}</span>
+        {{end}}
+    </div>
     <div class="current-event-text">{{.CardText}}</div>
     <div class="current-event-hint">Where does this belong in your timeline?</div>
     {{if .Attempts}}
@@ -11,6 +16,19 @@
         Missed by:
         {{range $i, $a := .Attempts}}{{if $i}}, {{end}}{{$a.PlayerName}}{{end}}
     </div>
+    {{end}}
+    {{if .IsCurrentGuesser}}
+    <button
+        class="btn-skip-remove"
+        hx-post="/api/timeline-trivia/{{.LobbyId}}/skip-card"
+        hx-target="#timeline-trivia-message"
+        hx-swap="innerHTML"
+        hx-confirm="Remove this card from the game and send it to admin review?"
+        title="Bad card? Pull it out of play and flag it for an admin to review."
+    >
+        <span class="bi bi-flag"></span>
+        Skip &amp; Remove
+    </button>
     {{end}}
 </div>
 {{else}}

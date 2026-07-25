@@ -63,6 +63,80 @@
 </table>
 <br />
 <details>
+    <summary>Win Celebration</summary>
+    <p>
+        Shown to everyone in the lobby whenever you place a card correctly.
+        Both are optional &mdash; set either, both, or neither.
+    </p>
+    <div class="form-input">
+        <label>Win GIF</label>
+        {{if .WinCelebration.HasGif}}
+        <img
+            src="/api/user/{{.User.Id}}/win-gif"
+            alt="Your current win GIF"
+            style="display: block; max-width: 240px; max-height: 240px; border-radius: 8px; margin-bottom: 8px;"
+        />
+        <button
+            hx-delete="/api/user/{{.User.Id}}/win-gif"
+            hx-confirm="Remove your win GIF?"
+        >
+            <span class="bi bi-trash"></span>
+            Remove GIF
+        </button>
+        {{else}}
+        <p style="font-style: italic; opacity: 0.7;">No GIF set.</p>
+        {{end}}
+    </div>
+    <form
+        hx-put="/api/user/{{.User.Id}}/win-gif"
+        hx-encoding="multipart/form-data"
+        hx-target="find .htmx-result"
+    >
+        <div class="form-input">
+            <label for="winGif">Upload a GIF (60 KB max)</label>
+            <input
+                type="file"
+                id="winGif"
+                name="winGif"
+                accept="image/gif"
+                required="required"
+            />
+        </div>
+        <div class="htmx-result"></div>
+        <input
+            type="submit"
+            value="Upload GIF"
+        />
+    </form>
+    <br />
+    <form
+        hx-put="/api/user/{{.User.Id}}/win-message"
+        hx-target="find .htmx-result"
+    >
+        <div class="form-input">
+            <label for="winMessage">Win Message (1000 characters max)</label>
+            <textarea
+                id="winMessage"
+                name="winMessage"
+                maxlength="1000"
+                rows="4"
+                placeholder="Shown under your GIF when you get one right"
+                autocomplete="off"
+                oninput="document.getElementById('win-message-count').textContent = this.value.length"
+            >{{.WinCelebration.Message.String}}</textarea>
+            <span style="font-size: 0.85em; opacity: 0.7;">
+                <span id="win-message-count">{{len .WinCelebration.Message.String}}</span> / 1000
+            </span>
+        </div>
+        <div class="htmx-result"></div>
+        <input
+            type="submit"
+            value="Save Message"
+        />
+    </form>
+</details>
+<br />
+<details>
     <summary>Change Password</summary>
     <form
         hx-put="/api/user/{{.User.Id}}/password"

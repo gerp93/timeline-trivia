@@ -9,6 +9,7 @@ import (
 	gameshell "github.com/gerp93/gameshell-framework"
 	gsApi "github.com/gerp93/gameshell-framework/api"
 	gsApiDeck "github.com/gerp93/gameshell-framework/api/deck"
+	gsApiLobby "github.com/gerp93/gameshell-framework/api/lobby"
 	gsApiUser "github.com/gerp93/gameshell-framework/api/user"
 	gsAuth "github.com/gerp93/gameshell-framework/auth"
 	gsDatabase "github.com/gerp93/gameshell-framework/database"
@@ -36,13 +37,13 @@ func main() {
 	gsApi.SetBrandName("Timeline Trivia")
 	gsAuth.SetCookiePrefix("CARD-TIMELINE")
 	gsApi.SetPagePolicy(gsApi.PagePolicy{
-		LoginPaths: []string{"/account", "/users", "/categories", "/stats"},
+		LoginPaths: []string{"/account", "/users", "/categories", "/flagged-cards", "/stats"},
 		LoginPathPrefixes: []string{
 			"/deck",
 			"/timeline-trivia",
 			"/stats",
 		},
-		AdminPaths: []string{"/users", "/categories"},
+		AdminPaths: []string{"/users", "/categories", "/flagged-cards"},
 	})
 	gsDatabase.SetEnvVarPrefix("TIMELINE_TRIVIA")
 
@@ -118,6 +119,7 @@ func main() {
 	http.Handle("GET /account", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Account)))
 	http.Handle("GET /users", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Users)))
 	http.Handle("GET /categories", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Categories)))
+	http.Handle("GET /flagged-cards", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.FlaggedCards)))
 	http.Handle("GET /decks", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Decks)))
 	http.Handle("GET /deck/{deckId}", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Deck)))
 	http.Handle("GET /deck/{deckId}/access", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.DeckAccess)))
@@ -144,6 +146,10 @@ func main() {
 	http.Handle("PUT /api/user/{userId}/password", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.SetPassword)))
 	http.Handle("PUT /api/user/{userId}/password/reset", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.ResetPassword)))
 	http.Handle("PUT /api/user/{userId}/color-theme", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.SetColorTheme)))
+	http.Handle("PUT /api/user/{userId}/win-gif", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.SetWinGif)))
+	http.Handle("DELETE /api/user/{userId}/win-gif", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.ClearWinGif)))
+	http.Handle("GET /api/user/{userId}/win-gif", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.GetWinGif)))
+	http.Handle("PUT /api/user/{userId}/win-message", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.SetWinMessage)))
 	http.Handle("PUT /api/user/{userId}/approve", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.Approve)))
 	http.Handle("PUT /api/user/{userId}/is-admin", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.SetIsAdmin)))
 	http.Handle("DELETE /api/user/{userId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiUser.Delete)))
@@ -162,6 +168,11 @@ func main() {
 	http.Handle("PUT /api/card/{cardId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Update)))
 	http.Handle("DELETE /api/card/{cardId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Delete)))
 
+	// flagged-card review (admin-only, checked in-handler). Accept is a POST
+	// rather than DELETE because it removes the flag, not the card.
+	http.Handle("POST /api/card/{cardId}/unflag", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Unflag)))
+	http.Handle("PUT /api/card/{cardId}/flagged", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.UpdateFlagged)))
+
 	// category (game-owned; admin-managed predefined list, checked in-handler).
 	// Delete-with-reassign is a POST (not DELETE) because it carries a form
 	// body — Go's ParseForm only reads the body for POST/PUT/PATCH.
@@ -178,9 +189,15 @@ func main() {
 	http.Handle("GET /api/timeline-trivia/{lobbyId}/current-card", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetCurrentCard)))
 	http.Handle("GET /api/timeline-trivia/{lobbyId}/players", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetPlayers)))
 	http.Handle("GET /api/timeline-trivia/{lobbyId}/draw-pile-count", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetDrawPileCount)))
+	http.Handle("GET /api/timeline-trivia/{lobbyId}/decks", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetDecks)))
+	http.Handle("POST /api/timeline-trivia/{lobbyId}/skip-card", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.SkipAndRemoveCard)))
+	http.Handle("POST /api/timeline-trivia/{lobbyId}/timeout", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.TimeoutPass)))
 	http.Handle("PUT /api/timeline-trivia/{lobbyId}/message", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.SetLobbyMessage)))
 	http.Handle("POST /api/timeline-trivia/search", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.Search)))
 	http.Handle("POST /api/timeline-trivia/card-count", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.CardCount)))
+
+	// lobby (framework-owned lobby settings)
+	http.Handle("PUT /api/lobby/{lobbyId}/turn-timer", gsApi.MiddlewareForAPIs(http.HandlerFunc(gsApiLobby.SetTurnTimer)))
 
 	// access
 	http.Handle("POST /api/access/lobby/{lobbyId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiAccess.Lobby)))

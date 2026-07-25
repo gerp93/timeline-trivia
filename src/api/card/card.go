@@ -224,6 +224,92 @@ func Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// Unflag accepts a card back out of purgatory unchanged, making it eligible
+// for draw piles again. Admin-only: the review screen is the only caller.
+func Unflag(w http.ResponseWriter, r *http.Request) {
+	cardId, err := uuid.Parse(r.PathValue("cardId"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("Failed to get card id from path."))
+		return
+	}
+
+	if !gsApi.UserIsAdmin(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("User does not have access."))
+		return
+	}
+
+	if err := database.UnflagCard(cardId); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(err.Error()))
+		return
+	}
+
+	w.Header().Add("HX-Refresh", "true")
+	w.WriteHeader(http.StatusOK)
+}
+
+// UpdateFlagged is "edit and accept" from the review screen: fix the card's
+// text/year/category and take it out of purgatory in one step, so a reviewer
+// can't accidentally accept a card they meant to correct first. Admin-only.
+func UpdateFlagged(w http.ResponseWriter, r *http.Request) {
+	cardId, err := uuid.Parse(r.PathValue("cardId"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("Failed to get card id from path."))
+		return
+	}
+
+	if !gsApi.UserIsAdmin(r) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("User does not have access."))
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("Failed to parse form."))
+		return
+	}
+
+	text := strings.TrimSpace(r.FormValue("text"))
+	if text == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("No text found."))
+		return
+	}
+
+	year, ok := parseYear(r.FormValue("year"))
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("Year must be a whole number."))
+		return
+	}
+
+	categoryId, categoryErr := parseCategoryId(r.FormValue("categoryId"))
+	if categoryErr != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(categoryErr))
+		return
+	}
+
+	if err := database.UpdateCard(cardId, text, year, categoryId); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(err.Error()))
+		return
+	}
+
+	if err := database.UnflagCard(cardId); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(err.Error()))
+		return
+	}
+
+	w.Header().Add("HX-Refresh", "true")
+	w.WriteHeader(http.StatusOK)
+}
+
 func GetCardExport(w http.ResponseWriter, r *http.Request) {
 	deckId, err := uuid.Parse(r.PathValue("deckId"))
 	if err != nil {

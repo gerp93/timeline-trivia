@@ -1,7 +1,9 @@
 package apiTimelineTrivia
 
 import (
+	"encoding/json"
 	"fmt"
+	"html"
 	"html/template"
 	"log"
 	"net/http"
@@ -20,6 +22,93 @@ import (
 // TimelineTrivia deck ID
 var timelineTriviaDeckId = uuid.MustParse("88026803-d22a-11f0-b4d2-60cf84649547")
 
+// defaultCardsToWin is the target a lobby gets when nothing else is specified.
+const defaultCardsToWin = 10
+
+// resultPayload is the body of a "result:" websocket message — the popup and
+// the bottom-of-screen status line every client shows after a guess resolves.
+// It is JSON rather than the colon-delimited form it replaced: player names
+// may contain colons, and the celebration fields have to ride along.
+type resultPayload struct {
+	PlayerName    string `json:"playerName"`
+	Type          string `json:"type"` // correct | incorrect | revealed
+	Message       string `json:"message"`
+	BottomMessage string `json:"bottomMessage"`
+	UserId        string `json:"userId,omitempty"`
+	Celebration   string `json:"celebration,omitempty"`
+	HasGif        bool   `json:"hasGif,omitempty"`
+}
+
+// announce posts a line to the lobby chat. Everything interpolated into msg
+// must already be escaped (see esc) — the framework only escapes messages
+// coming from players over the socket, and gsChat renders with innerHTML.
+func announce(lobbyId uuid.UUID, msg string) {
+	gsWebsocket.LobbyBroadcast(lobbyId, msg)
+}
+
+// esc makes player- or card-authored text safe to interpolate into a chat
+// line. The <red>/<green>/<blue> color tokens are added by the caller after
+// this, so they survive.
+func esc(s string) string {
+	return html.EscapeString(s)
+}
+
+// sendResult broadcasts a guess outcome to every client in the lobby. It is
+// deliberately lobby-wide: players need to see what happened on other
+// players' turns, not just their own.
+func sendResult(lobbyId uuid.UUID, payload resultPayload) {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	gsWebsocket.LobbyBroadcast(lobbyId, "result:"+string(encoded))
+}
+
+// turnOrderNames renders a game's active players in turn order, for the
+// "game started" chat line.
+func turnOrderNames(gameId uuid.UUID) string {
+	players, err := database.GetTimelineTriviaPlayers(gameId)
+	if err != nil {
+		log.Println(err)
+		return ""
+	}
+	names := make([]string, 0, len(players))
+	for _, p := range players {
+		if p.IsActive {
+			names = append(names, p.UserName)
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
+// currentPlayerName is whoever is on the hook to guess right now, for chat
+// lines written after the turn has already advanced.
+func currentPlayerName(gameId uuid.UUID) string {
+	players, err := database.GetTimelineTriviaPlayers(gameId)
+	if err != nil {
+		log.Println(err)
+		return "the next player"
+	}
+	for _, p := range players {
+		if p.IsCurrent {
+			return p.UserName
+		}
+	}
+	return "the next player"
+}
+
+// winCelebrationFor loads a player's personalized win GIF/message, if they set
+// one. Failures are non-fatal — the popup just falls back to its plain form.
+func winCelebrationFor(userId uuid.UUID) (celebration string, hasGif bool) {
+	c, err := gsDatabase.GetUserWinCelebration(userId)
+	if err != nil {
+		log.Println(err)
+		return "", false
+	}
+	return c.Message.String, c.HasGif
+}
+
 // ensureGameExists makes sure a TimelineTrivia game exists for a lobby, creating one if needed
 func ensureGameExists(lobbyId uuid.UUID) (database.TimelineTriviaGame, error) {
 	game, err := database.GetTimelineTriviaGame(lobbyId)
@@ -28,7 +117,7 @@ func ensureGameExists(lobbyId uuid.UUID) (database.TimelineTriviaGame, error) {
 	}
 
 	// Auto-create the game with default settings
-	gameId, createErr := database.CreateTimelineTriviaGame(lobbyId, 5) // 5 cards to win default
+	gameId, createErr := database.CreateTimelineTriviaGame(lobbyId, defaultCardsToWin)
 	if createErr != nil {
 		return game, createErr
 	}
@@ -59,7 +148,7 @@ func Create(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	message := r.FormValue("message")
 
-	cardsToWin := 5
+	cardsToWin := defaultCardsToWin
 	if cardsToWinStr := r.FormValue("cardsToWin"); cardsToWinStr != "" {
 		if val, err := strconv.Atoi(cardsToWinStr); err == nil && val > 0 {
 			cardsToWin = val
@@ -129,12 +218,26 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optional per-turn countdown (framework lobby setting; 0 = off)
+	turnTimerSeconds := 0
+	if turnTimerStr := r.FormValue("turnTimerSeconds"); turnTimerStr != "" {
+		if val, err := strconv.Atoi(turnTimerStr); err == nil && val > 0 {
+			turnTimerSeconds = val
+		}
+	}
+
 	// Create the lobby with game_type = 'timeline-trivia'
 	lobbyId, err := database.CreateTimelineTriviaLobby(name, message, password)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to create lobby"))
 		return
+	}
+
+	if turnTimerSeconds > 0 {
+		if err := gsDatabase.SetLobbyTurnTimerSeconds(lobbyId, turnTimerSeconds); err != nil {
+			log.Println(err)
+		}
 	}
 
 	// Create the TimelineTrivia game
@@ -199,6 +302,9 @@ func StartGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The order is freshly shuffled, so tell everyone what it came out as.
+	announce(lobbyId, fmt.Sprintf("<blue>Game started</> — turn order: %s", esc(turnOrderNames(game.Id))))
+
 	// Notify all players via WebSocket to reload the page
 	gsWebsocket.LobbyBroadcast(lobbyId, "reload")
 
@@ -234,6 +340,8 @@ func ResetGame(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("failed to reset game: " + err.Error()))
 		return
 	}
+
+	announce(lobbyId, "<blue>New game</> — press Start Game to deal and reshuffle the turn order.")
 
 	// Notify all players to reload the page
 	gsWebsocket.LobbyBroadcast(lobbyId, "reload")
@@ -307,7 +415,11 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	guessedYear := database.FormatYear(guessedCard.CardYear)
+
 	if correct {
+		celebration, hasGif := winCelebrationFor(userId)
+
 		// Check for winner
 		winnerId, err := database.CheckTimelineTriviaWinner(game.Id)
 		if err == nil && winnerId != uuid.Nil {
@@ -315,12 +427,30 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 			if logErr := database.LogWin(winnerId); logErr != nil {
 				log.Println(logErr)
 			}
-			gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:You win!", player.Name))
+			announce(lobbyId, fmt.Sprintf(
+				"<green>%s</> placed \"%s\" correctly — it was %s.",
+				esc(player.Name), esc(guessedCard.CardText), esc(guessedYear),
+			))
+			announce(lobbyId, fmt.Sprintf("<green>%s wins the game!</>", esc(player.Name)))
+			sendResult(lobbyId, resultPayload{
+				PlayerName:    player.Name,
+				Type:          "correct",
+				Message:       "Wins the game!",
+				BottomMessage: fmt.Sprintf("%s wins the game!", player.Name),
+				UserId:        userId.String(),
+				Celebration:   celebration,
+				HasGif:        hasGif,
+			})
 			gsWebsocket.LobbyBroadcast(lobbyId, "reload")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("You win!"))
 			return
 		}
+
+		announce(lobbyId, fmt.Sprintf(
+			"<green>%s</> placed \"%s\" correctly — it was %s.",
+			esc(player.Name), esc(guessedCard.CardText), esc(guessedYear),
+		))
 
 		// Round resolved: next round starts with the next active player
 		// after this round's starter, and a fresh card is drawn.
@@ -331,7 +461,15 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:correct:Correct!", player.Name))
+		sendResult(lobbyId, resultPayload{
+			PlayerName:    player.Name,
+			Type:          "correct",
+			Message:       fmt.Sprintf("Correct! It was %s.", guessedYear),
+			BottomMessage: fmt.Sprintf("%s placed \"%s\" correctly — it was %s.", player.Name, guessedCard.CardText, guessedYear),
+			UserId:        userId.String(),
+			Celebration:   celebration,
+			HasGif:        hasGif,
+		})
 		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Correct! Next round begins."))
@@ -343,6 +481,7 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		// year it actually was before ResolveCardRound clears the current
 		// card and draws the next one.
 		revealedCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
+		revealedYear := database.FormatYear(revealedCard.CardYear)
 
 		// Record the discard for stats (non-fatal on failure).
 		if revealedCard.CardId != uuid.Nil {
@@ -350,6 +489,11 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 				log.Println(logErr)
 			}
 		}
+
+		announce(lobbyId, fmt.Sprintf(
+			"<red>Nobody got \"%s\" — it was %s. Card discarded.</>",
+			esc(revealedCard.CardText), esc(revealedYear),
+		))
 
 		// Next round starts with the next active player after this round's
 		// starter.
@@ -360,15 +504,17 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf(
-			"result:%s:revealed:Everyone missed! It was %s. Card discarded.",
-			player.Name, database.FormatYear(revealedCard.CardYear),
-		))
+		sendResult(lobbyId, resultPayload{
+			PlayerName:    player.Name,
+			Type:          "revealed",
+			Message:       fmt.Sprintf("Everyone missed! It was %s. Card discarded.", revealedYear),
+			BottomMessage: fmt.Sprintf("Nobody got \"%s\" — it was %s. Card discarded.", revealedCard.CardText, revealedYear),
+		})
 		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(fmt.Sprintf(
 			"Incorrect. Everyone missed — card discarded.\n%s: %s",
-			database.FormatYear(revealedCard.CardYear), revealedCard.CardText,
+			revealedYear, revealedCard.CardText,
 		)))
 		return
 	}
@@ -380,7 +526,19 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gsWebsocket.LobbyBroadcast(lobbyId, fmt.Sprintf("result:%s:incorrect:Wrong! Next player can steal it.", player.Name))
+	// Deliberately no year here — the card is still in play and revealing it
+	// would spoil the steal.
+	nextName := currentPlayerName(game.Id)
+	announce(lobbyId, fmt.Sprintf(
+		"<red>%s</> guessed wrong on \"%s\" — %s can steal it.",
+		esc(player.Name), esc(guessedCard.CardText), esc(nextName),
+	))
+	sendResult(lobbyId, resultPayload{
+		PlayerName:    player.Name,
+		Type:          "incorrect",
+		Message:       "Wrong! Next player can steal it.",
+		BottomMessage: fmt.Sprintf("%s guessed wrong on \"%s\" — %s can steal it.", player.Name, guessedCard.CardText, nextName),
+	})
 	gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("Incorrect. Next player can try to steal this card."))
@@ -582,6 +740,16 @@ func GetCurrentCard(w http.ResponseWriter, r *http.Request) {
 	currentCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
 	attempts, _ := database.GetCardAttempts(game.Id)
 
+	// Only the player currently on the hook gets the "skip and remove"
+	// control, so the fragment has to know who is viewing it.
+	isCurrentGuesser := false
+	if game.CurrentPlayerId.Valid {
+		viewer, err := gsDatabase.GetLobbyUserPlayer(lobbyId, gsApi.GetUserId(r))
+		if err == nil {
+			isCurrentGuesser = viewer.Id == game.CurrentPlayerId.UUID
+		}
+	}
+
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
 		"html/components/timeline-trivia/current-card.html",
@@ -594,13 +762,211 @@ func GetCurrentCard(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		database.TimelineTriviaCurrentCard
-		Attempts []database.TimelineTriviaCardAttempt
+		Attempts         []database.TimelineTriviaCardAttempt
+		LobbyId          uuid.UUID
+		IsCurrentGuesser bool
 	}
 
 	_ = tmpl.Execute(w, data{
 		TimelineTriviaCurrentCard: currentCard,
 		Attempts:                  attempts,
+		LobbyId:                   lobbyId,
+		IsCurrentGuesser:          isCurrentGuesser,
 	})
+}
+
+// GetDecks returns the deck-breakdown tooltip shown next to the lobby's card
+// counts.
+func GetDecks(w http.ResponseWriter, r *http.Request) {
+	lobbyIdString := r.PathValue("lobbyId")
+	lobbyId, err := uuid.Parse(lobbyIdString)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("invalid lobby id"))
+		return
+	}
+
+	game, err := ensureGameExists(lobbyId)
+	if err != nil || game.Id == uuid.Nil {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("game not found"))
+		return
+	}
+
+	decks, err := database.GetTimelineTriviaGameDecks(game.Id)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get decks"))
+		return
+	}
+
+	tmpl, err := template.ParseFS(
+		static.StaticFiles,
+		"html/components/timeline-trivia/deck-info.html",
+	)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to parse template"))
+		return
+	}
+
+	_ = tmpl.Execute(w, decks)
+}
+
+// SkipAndRemoveCard takes a bad current card out of play and sends it to admin
+// review. Only the player being asked to guess it can do this, and the round
+// restarts cleanly with a replacement card rather than penalizing anyone.
+func SkipAndRemoveCard(w http.ResponseWriter, r *http.Request) {
+	lobbyIdString := r.PathValue("lobbyId")
+	lobbyId, err := uuid.Parse(lobbyIdString)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("invalid lobby id"))
+		return
+	}
+
+	userId := gsApi.GetUserId(r)
+
+	player, err := gsDatabase.GetLobbyUserPlayer(lobbyId, userId)
+	if err != nil || player.Id == uuid.Nil {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("not a player in this game"))
+		return
+	}
+
+	game, err := database.GetTimelineTriviaGame(lobbyId)
+	if err != nil || game.Id == uuid.Nil {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("game not found"))
+		return
+	}
+
+	if !game.CurrentPlayerId.Valid || game.CurrentPlayerId.UUID != player.Id {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("only the current guesser can remove this card"))
+		return
+	}
+
+	currentCard, err := database.GetTimelineTriviaCurrentCard(game.Id)
+	if err != nil || currentCard.CardId == uuid.Nil {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("no card to remove"))
+		return
+	}
+
+	if err := database.FlagCardAndSkip(game.Id, currentCard.CardId, userId, lobbyId); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to remove card: " + err.Error()))
+		return
+	}
+
+	announce(lobbyId, fmt.Sprintf(
+		"<red>%s</> flagged \"%s\" for review — removed from this game.",
+		esc(player.Name), esc(currentCard.CardText),
+	))
+	gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("Card removed and sent for review."))
+}
+
+// TimeoutPass is posted by the current guesser's own browser when their turn
+// timer runs out. They lose their shot at this card with no penalty — no
+// guess is recorded against their timeline — and it passes on.
+func TimeoutPass(w http.ResponseWriter, r *http.Request) {
+	lobbyIdString := r.PathValue("lobbyId")
+	lobbyId, err := uuid.Parse(lobbyIdString)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("invalid lobby id"))
+		return
+	}
+
+	userId := gsApi.GetUserId(r)
+
+	player, err := gsDatabase.GetLobbyUserPlayer(lobbyId, userId)
+	if err != nil || player.Id == uuid.Nil {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("not a player in this game"))
+		return
+	}
+
+	game, err := database.GetTimelineTriviaGame(lobbyId)
+	if err != nil || game.Id == uuid.Nil {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("game not found"))
+		return
+	}
+
+	// A stale client whose turn already passed must not skip anyone else.
+	if game.GameStatus != "active" || !game.CurrentPlayerId.Valid || game.CurrentPlayerId.UUID != player.Id {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("not your turn"))
+		return
+	}
+
+	roundExhausted, err := database.RecordTimeoutPass(game.Id, player.Id)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to record timeout"))
+		return
+	}
+
+	announce(lobbyId, fmt.Sprintf("<red>%s</> ran out of time — passing.", esc(player.Name)))
+
+	if roundExhausted {
+		// Nobody guessed this card in time; it's discarded like any other
+		// exhausted round, with the answer revealed.
+		revealedCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
+		revealedYear := database.FormatYear(revealedCard.CardYear)
+
+		if revealedCard.CardId != uuid.Nil {
+			if logErr := database.LogCardDiscard(revealedCard.CardId); logErr != nil {
+				log.Println(logErr)
+			}
+		}
+
+		announce(lobbyId, fmt.Sprintf(
+			"<red>Nobody got \"%s\" — it was %s. Card discarded.</>",
+			esc(revealedCard.CardText), esc(revealedYear),
+		))
+
+		if err := database.ResolveCardRound(game.Id); err != nil {
+			gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("Time's up. No more cards."))
+			return
+		}
+
+		sendResult(lobbyId, resultPayload{
+			PlayerName:    player.Name,
+			Type:          "revealed",
+			Message:       fmt.Sprintf("Time ran out! It was %s. Card discarded.", revealedYear),
+			BottomMessage: fmt.Sprintf("Nobody got \"%s\" — it was %s. Card discarded.", revealedCard.CardText, revealedYear),
+		})
+		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Time's up. Card discarded."))
+		return
+	}
+
+	if err := database.AdvanceToNextGuesser(game.Id); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to advance to next guesser"))
+		return
+	}
+
+	nextName := currentPlayerName(game.Id)
+	sendResult(lobbyId, resultPayload{
+		PlayerName:    player.Name,
+		Type:          "incorrect",
+		Message:       "Out of time!",
+		BottomMessage: fmt.Sprintf("%s ran out of time — %s can steal it.", player.Name, nextName),
+	})
+	gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("Time's up. Passing to the next player."))
 }
 
 // GetDrawPileCount returns the number of cards remaining in the draw pile

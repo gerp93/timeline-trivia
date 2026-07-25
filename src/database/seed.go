@@ -316,6 +316,13 @@ func getCardTextsInDeck(deckId uuid.UUID) (map[string]bool, error) {
 	return texts, nil
 }
 
+// seedTestUserNames are the extra non-admin accounts created alongside
+// "default" on a fresh database. Timeline Trivia needs several players to
+// exercise turn order and steals, and creating them by hand every time is
+// friction. They share the same well-known password, so a real deployment
+// should change or delete them after the first login.
+var seedTestUserNames = []string{"default2", "default3", "default4"}
+
 // SeedDefaultUserIfEmpty creates a default user account if none exist.
 // This is used on fresh deployments to provide an initial login.
 func SeedDefaultUserIfEmpty() error {
@@ -349,5 +356,17 @@ func SeedDefaultUserIfEmpty() error {
 		return err
 	}
 
-	return gsDatabase.SetUserIsAdmin(userId, true)
+	if err := gsDatabase.SetUserIsAdmin(userId, true); err != nil {
+		return err
+	}
+
+	// Extra players so a multi-player game can be exercised immediately.
+	// Non-admin, unlike "default" — a full lobby doesn't need four admins.
+	for _, name := range seedTestUserNames {
+		if err := gsDatabase.CreateUser(name, "password", true); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

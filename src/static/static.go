@@ -15,12 +15,14 @@ var SQLFiles = []string{
 	"sql/tables/TIMELINE_TRIVIA_CATEGORY.sql",
 	"sql/tables/CARD.sql",
 	"sql/tables/AUDIT_CARD.sql",
+	"sql/tables/CARD_FLAGGED.sql",
 	"sql/tables/TIMELINE_TRIVIA_GAME.sql",
 	"sql/tables/TIMELINE_TRIVIA_YEAR_RANGE.sql",
 	"sql/tables/TIMELINE_TRIVIA_CARD_ATTEMPT.sql",
 	"sql/tables/TIMELINE_TRIVIA_CURRENT_CARD.sql",
 	"sql/tables/TIMELINE_TRIVIA_DRAW_PILE.sql",
 	"sql/tables/TIMELINE_TRIVIA_PLAYER_TIMELINE.sql",
+	"sql/tables/TIMELINE_TRIVIA_PLAYER_ORDER.sql",
 
 	// append-only gameplay logs (no FKs by design; feed the stats pages and
 	// must outlive the lobby/game rows, which cascade away on disconnect)
@@ -33,6 +35,7 @@ var SQLFiles = []string{
 	// and before the triggers that reference the added columns.
 	"sql/migrations/MIG_CARD_ADD_CATEGORY_ID.sql",
 	"sql/migrations/MIG_AUDIT_CARD_ADD_CATEGORY_ID.sql",
+	"sql/migrations/MIG_TIMELINE_TRIVIA_GAME_CARDS_TO_WIN_DEFAULT.sql",
 
 	// triggers
 	"sql/triggers/TR_AUDIT_CARD_DELETE.sql",

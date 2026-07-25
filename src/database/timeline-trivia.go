@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -71,6 +72,9 @@ type TimelineTriviaTimelineCard struct {
 	CategoryName sql.NullString
 	Position     int
 	PlacedOnDate time.Time
+	// IsLastPlaced marks the single most recently won card in the whole game,
+	// so the board can highlight it wherever it landed.
+	IsLastPlaced bool
 }
 
 // TimelineTriviaCurrentCard represents the current card being played
@@ -79,6 +83,17 @@ type TimelineTriviaCurrentCard struct {
 	CardText     string
 	CardYear     int
 	CategoryName sql.NullString
+	DeckName     string
+}
+
+// TimelineTriviaDeckInfo is one deck's contribution to a game's draw pile,
+// derived from the pile itself (the decks a lobby was created with are not
+// stored anywhere else).
+type TimelineTriviaDeckInfo struct {
+	DeckId         uuid.UUID
+	Name           string
+	RemainingCount int
+	TotalCount     int
 }
 
 // TimelineTriviaPlayer represents a player in a TimelineTrivia game with their timeline
@@ -243,6 +258,7 @@ func InitializeTimelineTriviaDrawPile(gameId uuid.UUID, deckIds []uuid.UUID, exc
 		FROM CARD C
 		WHERE C.DECK_ID IN (` + deckPlaceholders + `)
 			AND C.CARD_YEAR IS NOT NULL
+			AND NOT EXISTS (SELECT 1 FROM CARD_FLAGGED F WHERE F.CARD_ID = C.ID)
 	`
 	if len(excludedCategoryIds) > 0 {
 		categoryPlaceholders := strings.TrimSuffix(strings.Repeat("?,", len(excludedCategoryIds)), ",")
@@ -348,6 +364,7 @@ func CountCardsInDecksForRanges(deckIds []uuid.UUID, ranges []TimelineTriviaYear
 		FROM CARD
 		WHERE DECK_ID IN (` + deckPlaceholders + `)
 			AND CARD_YEAR IS NOT NULL
+			AND NOT EXISTS (SELECT 1 FROM CARD_FLAGGED F WHERE F.CARD_ID = CARD.ID)
 	`
 	if len(ranges) > 0 {
 		rangeClauses := make([]string, 0, len(ranges))
@@ -402,6 +419,7 @@ func GetDeckCardCounts(deckIds []uuid.UUID) (map[uuid.UUID]int, error) {
 		FROM CARD
 		WHERE DECK_ID IN (` + placeholders + `)
 			AND CARD_YEAR IS NOT NULL
+			AND NOT EXISTS (SELECT 1 FROM CARD_FLAGGED F WHERE F.CARD_ID = CARD.ID)
 		GROUP BY DECK_ID
 	`
 	rows, err := query(sqlString, args...)
@@ -472,10 +490,11 @@ func GetTimelineTriviaCurrentCard(gameId uuid.UUID) (TimelineTriviaCurrentCard, 
 	var card TimelineTriviaCurrentCard
 
 	sqlString := `
-		SELECT CC.CARD_ID, C.TEXT, CC.CARD_YEAR, TC.NAME
+		SELECT CC.CARD_ID, C.TEXT, CC.CARD_YEAR, TC.NAME, COALESCE(D.NAME, '')
 		FROM TIMELINE_TRIVIA_CURRENT_CARD CC
 		INNER JOIN CARD C ON C.ID = CC.CARD_ID
 		LEFT JOIN TIMELINE_TRIVIA_CATEGORY TC ON TC.ID = C.CATEGORY_ID
+		LEFT JOIN DECK D ON D.ID = C.DECK_ID
 		WHERE CC.TIMELINE_TRIVIA_GAME_ID = ?
 	`
 	rows, err := query(sqlString, gameId)
@@ -485,13 +504,78 @@ func GetTimelineTriviaCurrentCard(gameId uuid.UUID) (TimelineTriviaCurrentCard, 
 	defer rows.Close()
 
 	for rows.Next() {
-		if err := rows.Scan(&card.CardId, &card.CardText, &card.CardYear, &card.CategoryName); err != nil {
+		if err := rows.Scan(&card.CardId, &card.CardText, &card.CardYear, &card.CategoryName, &card.DeckName); err != nil {
 			log.Println(err)
 			return card, errors.New("failed to scan row in query results")
 		}
 	}
 
 	return card, nil
+}
+
+// GetTimelineTriviaGameDecks returns the decks a game's draw pile was built
+// from, with how many of their cards are left and how many they contributed.
+// The lobby's deck selection isn't stored anywhere, so it's derived from the
+// pile itself.
+func GetTimelineTriviaGameDecks(gameId uuid.UUID) ([]TimelineTriviaDeckInfo, error) {
+	sqlString := `
+		SELECT
+			D.ID,
+			D.NAME,
+			SUM(CASE WHEN DP.DRAWN = 0 THEN 1 ELSE 0 END) AS REMAINING_COUNT,
+			COUNT(*) AS TOTAL_COUNT
+		FROM TIMELINE_TRIVIA_DRAW_PILE DP
+		INNER JOIN CARD C ON C.ID = DP.CARD_ID
+		INNER JOIN DECK D ON D.ID = C.DECK_ID
+		WHERE DP.TIMELINE_TRIVIA_GAME_ID = ?
+		GROUP BY D.ID, D.NAME
+		ORDER BY D.NAME ASC
+	`
+	rows, err := query(sqlString, gameId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]TimelineTriviaDeckInfo, 0)
+	for rows.Next() {
+		var deck TimelineTriviaDeckInfo
+		if err := rows.Scan(&deck.DeckId, &deck.Name, &deck.RemainingCount, &deck.TotalCount); err != nil {
+			log.Println(err)
+			return nil, errors.New("failed to scan row in query results")
+		}
+		result = append(result, deck)
+	}
+
+	return result, nil
+}
+
+// GetLastPlacedCardId returns the card most recently won by anyone in this
+// game, or uuid.Nil when nothing has been placed yet.
+func GetLastPlacedCardId(gameId uuid.UUID) (uuid.UUID, error) {
+	var cardId uuid.UUID
+
+	sqlString := `
+		SELECT CARD_ID
+		FROM TIMELINE_TRIVIA_PLAYER_TIMELINE
+		WHERE TIMELINE_TRIVIA_GAME_ID = ?
+		ORDER BY PLACED_ON_DATE DESC, ID DESC
+		LIMIT 1
+	`
+	rows, err := query(sqlString, gameId)
+	if err != nil {
+		return cardId, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		if err := rows.Scan(&cardId); err != nil {
+			log.Println(err)
+			return cardId, errors.New("failed to scan row in query results")
+		}
+	}
+
+	return cardId, nil
 }
 
 // GetPlayerTimeline gets all cards in a player's timeline for a game
@@ -531,7 +615,10 @@ func GetPlayerTimeline(gameId uuid.UUID, playerId uuid.UUID) ([]TimelineTriviaTi
 	return result, nil
 }
 
-// GetAllPlayerTimelines gets all players' timelines for a game, ordered with current player first
+// GetAllPlayerTimelines gets all players' timelines for a game, in turn order.
+// Rows deliberately stay put as turns pass — the current player is flagged
+// rather than hoisted to the top, so the board doesn't reshuffle underneath
+// players mid-game.
 func GetAllPlayerTimelines(gameId uuid.UUID, currentPlayerId uuid.UUID, viewingPlayerId uuid.UUID) ([]TimelineTriviaPlayerTimeline, error) {
 	// Get all active players
 	players, err := GetTimelineTriviaPlayers(gameId)
@@ -545,50 +632,41 @@ func GetAllPlayerTimelines(gameId uuid.UUID, currentPlayerId uuid.UUID, viewingP
 	}
 	attemptByPlayer := make(map[uuid.UUID]int, len(attempts))
 	for _, a := range attempts {
+		// TimedOutPosition marks a player who ran out of time rather than
+		// guessing; there's no slot to draw a "guessed here" marker at.
+		if a.Position == TimedOutPosition {
+			continue
+		}
 		attemptByPlayer[a.PlayerId] = a.Position
 	}
 
-	result := make([]TimelineTriviaPlayerTimeline, 0, len(players))
-
-	// First add current player
-	for _, p := range players {
-		if p.IsActive && p.PlayerId == currentPlayerId {
-			timeline, err := GetPlayerTimeline(gameId, p.PlayerId)
-			if err != nil {
-				timeline = []TimelineTriviaTimelineCard{}
-			}
-			position, hasAttempt := attemptByPlayer[p.PlayerId]
-			result = append(result, TimelineTriviaPlayerTimeline{
-				PlayerId:          p.PlayerId,
-				PlayerName:        p.UserName,
-				IsCurrent:         true,
-				IsMe:              p.PlayerId == viewingPlayerId,
-				Timeline:          timeline,
-				HasAttempt:        hasAttempt,
-				AttemptedPosition: position,
-			})
-			break
-		}
+	lastPlacedCardId, err := GetLastPlacedCardId(gameId)
+	if err != nil {
+		lastPlacedCardId = uuid.Nil
 	}
 
-	// Then add other players in order
+	result := make([]TimelineTriviaPlayerTimeline, 0, len(players))
 	for _, p := range players {
-		if p.IsActive && p.PlayerId != currentPlayerId {
-			timeline, err := GetPlayerTimeline(gameId, p.PlayerId)
-			if err != nil {
-				timeline = []TimelineTriviaTimelineCard{}
-			}
-			position, hasAttempt := attemptByPlayer[p.PlayerId]
-			result = append(result, TimelineTriviaPlayerTimeline{
-				PlayerId:          p.PlayerId,
-				PlayerName:        p.UserName,
-				IsCurrent:         false,
-				IsMe:              p.PlayerId == viewingPlayerId,
-				Timeline:          timeline,
-				HasAttempt:        hasAttempt,
-				AttemptedPosition: position,
-			})
+		if !p.IsActive {
+			continue
 		}
+		timeline, err := GetPlayerTimeline(gameId, p.PlayerId)
+		if err != nil {
+			timeline = []TimelineTriviaTimelineCard{}
+		}
+		for i := range timeline {
+			timeline[i].IsLastPlaced = lastPlacedCardId != uuid.Nil && timeline[i].CardId == lastPlacedCardId
+		}
+		position, hasAttempt := attemptByPlayer[p.PlayerId]
+		result = append(result, TimelineTriviaPlayerTimeline{
+			PlayerId:          p.PlayerId,
+			PlayerName:        p.UserName,
+			IsCurrent:         p.PlayerId == currentPlayerId,
+			IsMe:              p.PlayerId == viewingPlayerId,
+			Timeline:          timeline,
+			HasAttempt:        hasAttempt,
+			AttemptedPosition: position,
+		})
 	}
 
 	return result, nil
@@ -702,6 +780,92 @@ func AttemptPlaceCardInTimeline(gameId uuid.UUID, playerId uuid.UUID, position i
 	}
 
 	return false, len(attempts) >= activeCount, nil
+}
+
+// TimedOutPosition is the sentinel POSITION recorded against a player who ran
+// out of time instead of guessing. It occupies the same
+// TIMELINE_TRIVIA_CARD_ATTEMPT slot as a real miss, so the steal chain skips
+// them and the round still ends once everyone has had a turn — but it is not a
+// guess, so no "guessed here" marker is drawn on their timeline.
+const TimedOutPosition = -1
+
+// RecordTimeoutPass marks the current guesser as having run out of time, with
+// no guess and no penalty beyond losing their shot at this card. Returns
+// whether every active player has now had this card.
+func RecordTimeoutPass(gameId uuid.UUID, playerId uuid.UUID) (roundExhausted bool, err error) {
+	attemptId, err := uuid.NewUUID()
+	if err != nil {
+		log.Println(err)
+		return false, errors.New("failed to generate new id")
+	}
+
+	// INSERT IGNORE: GAME_PLAYER_UNIQUE means a duplicate timeout (two clients
+	// firing at zero) is a no-op rather than an error.
+	sqlAttempt := `
+		INSERT IGNORE INTO TIMELINE_TRIVIA_CARD_ATTEMPT (ID, TIMELINE_TRIVIA_GAME_ID, PLAYER_ID, POSITION)
+		VALUES (?, ?, ?, ?)
+	`
+	if err := execute(sqlAttempt, attemptId, gameId, playerId, TimedOutPosition); err != nil {
+		return false, err
+	}
+
+	players, err := GetTimelineTriviaPlayers(gameId)
+	if err != nil {
+		return false, err
+	}
+	activeCount := 0
+	for _, p := range players {
+		if p.IsActive {
+			activeCount++
+		}
+	}
+
+	attempts, err := GetCardAttempts(gameId)
+	if err != nil {
+		return false, err
+	}
+
+	return len(attempts) >= activeCount, nil
+}
+
+// FlagCardAndSkip sends the current card to admin review ("skip and remove")
+// and immediately draws a replacement for the same guesser. The card stays
+// DRAWN in this game's pile and, being flagged, is excluded from every future
+// draw pile until an admin resolves it on /flagged-cards.
+func FlagCardAndSkip(gameId uuid.UUID, cardId uuid.UUID, userId uuid.UUID, lobbyId uuid.UUID) error {
+	id, err := uuid.NewUUID()
+	if err != nil {
+		log.Println(err)
+		return errors.New("failed to generate new id")
+	}
+
+	// INSERT IGNORE: a card already in purgatory stays flagged by whoever got
+	// there first rather than erroring on CARD_UNIQUE.
+	sqlFlag := `
+		INSERT IGNORE INTO CARD_FLAGGED (ID, CARD_ID, FLAGGED_BY_USER_ID, LOBBY_ID)
+		VALUES (?, ?, ?, ?)
+	`
+	if err := execute(sqlFlag, id, cardId, userId, lobbyId); err != nil {
+		return err
+	}
+
+	// The skipped card was nobody's fault, so the round restarts cleanly with
+	// whoever it started with rather than carrying over anyone's misses.
+	if err := clearCardAttempts(gameId); err != nil {
+		return err
+	}
+
+	game, err := GetTimelineTriviaGameById(gameId)
+	if err != nil {
+		return err
+	}
+	if game.RoundStarterPlayerId.Valid {
+		if err := SetTimelineTriviaCurrentPlayer(gameId, game.RoundStarterPlayerId.UUID); err != nil {
+			return err
+		}
+	}
+
+	return DrawTimelineTriviaCard(gameId)
 }
 
 // AdvanceToNextGuesser hands the current card to the next active player who
@@ -841,8 +1005,10 @@ func GetTimelineTriviaPlayers(gameId uuid.UUID) ([]TimelineTriviaPlayer, error) 
 		INNER JOIN LOBBY L ON L.ID = CG.LOBBY_ID
 		INNER JOIN PLAYER P ON P.LOBBY_ID = L.ID
 		INNER JOIN USER U ON U.ID = P.USER_ID
+		LEFT JOIN TIMELINE_TRIVIA_PLAYER_ORDER PO
+			ON PO.TIMELINE_TRIVIA_GAME_ID = CG.ID AND PO.PLAYER_ID = P.ID
 		WHERE CG.ID = ?
-		ORDER BY P.JOIN_ORDER ASC
+		ORDER BY COALESCE(PO.TURN_ORDER, 1000000 + P.JOIN_ORDER) ASC, P.JOIN_ORDER ASC
 	`
 	rows, err := query(sqlString, gameId)
 	if err != nil {
@@ -876,8 +1042,60 @@ func SetTimelineTriviaCurrentPlayer(gameId uuid.UUID, playerId uuid.UUID) error 
 	return execute(sqlString, playerId, gameId)
 }
 
+// ShuffleTimelineTriviaPlayerOrder randomizes the game's turn order, replacing
+// any previous one. Called at the start of every game so play order changes
+// between games in the same lobby instead of being frozen at PLAYER.JOIN_ORDER.
+func ShuffleTimelineTriviaPlayerOrder(gameId uuid.UUID) error {
+	sqlClear := `DELETE FROM TIMELINE_TRIVIA_PLAYER_ORDER WHERE TIMELINE_TRIVIA_GAME_ID = ?`
+	if err := execute(sqlClear, gameId); err != nil {
+		return err
+	}
+
+	players, err := GetTimelineTriviaPlayers(gameId)
+	if err != nil {
+		return err
+	}
+
+	active := make([]uuid.UUID, 0, len(players))
+	for _, p := range players {
+		if p.IsActive {
+			active = append(active, p.PlayerId)
+		}
+	}
+	if len(active) == 0 {
+		return errors.New("no active players to order")
+	}
+
+	rand.Shuffle(len(active), func(i, j int) {
+		active[i], active[j] = active[j], active[i]
+	})
+
+	sqlInsert := `
+		INSERT INTO TIMELINE_TRIVIA_PLAYER_ORDER (ID, TIMELINE_TRIVIA_GAME_ID, PLAYER_ID, TURN_ORDER)
+		VALUES (?, ?, ?, ?)
+	`
+	for turnOrder, playerId := range active {
+		id, err := uuid.NewUUID()
+		if err != nil {
+			log.Println(err)
+			return errors.New("failed to generate new id")
+		}
+		if err := execute(sqlInsert, id, gameId, playerId, turnOrder); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // StartTimelineTriviaGame starts the game by setting status and first player
 func StartTimelineTriviaGame(gameId uuid.UUID) error {
+	// Randomize the turn order before anything reads it — dealing, the first
+	// player, and the board's row order all come from GetTimelineTriviaPlayers.
+	if err := ShuffleTimelineTriviaPlayerOrder(gameId); err != nil {
+		return err
+	}
+
 	players, err := GetTimelineTriviaPlayers(gameId)
 	if err != nil {
 		return err
@@ -982,8 +1200,20 @@ func ResetTimelineTriviaGame(gameId uuid.UUID) error {
 		return err
 	}
 
-	// Reset draw pile - mark all cards as not drawn
-	sqlResetDrawPile := `UPDATE TIMELINE_TRIVIA_DRAW_PILE SET DRAWN = 0 WHERE TIMELINE_TRIVIA_GAME_ID = ?`
+	// Drop the turn order so the next start reshuffles it
+	sqlClearOrder := `DELETE FROM TIMELINE_TRIVIA_PLAYER_ORDER WHERE TIMELINE_TRIVIA_GAME_ID = ?`
+	if err := execute(sqlClearOrder, gameId); err != nil {
+		return err
+	}
+
+	// Reset draw pile - mark all cards as not drawn, except cards flagged for
+	// admin review during the last game (they stay out of play)
+	sqlResetDrawPile := `
+		UPDATE TIMELINE_TRIVIA_DRAW_PILE DP
+		SET DP.DRAWN = 0
+		WHERE DP.TIMELINE_TRIVIA_GAME_ID = ?
+			AND NOT EXISTS (SELECT 1 FROM CARD_FLAGGED F WHERE F.CARD_ID = DP.CARD_ID)
+	`
 	if err := execute(sqlResetDrawPile, gameId); err != nil {
 		return err
 	}
