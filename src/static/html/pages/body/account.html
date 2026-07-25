@@ -97,7 +97,7 @@
         hx-on::after-request="if (event.detail.successful) { document.getElementById('win-image-preview-img').src = '/api/user/{{.User.Id}}/win-gif?t=' + Date.now(); document.getElementById('win-image-preview').style.display = ''; document.getElementById('win-image-empty').style.display = 'none'; this.reset(); }"
     >
         <div class="form-input">
-            <label for="winGif">Upload an image (GIF or PNG, 60 KB max)</label>
+            <label for="winGif">Upload an image (GIF or PNG, 1000 KB max)</label>
             <input
                 type="file"
                 id="winGif"

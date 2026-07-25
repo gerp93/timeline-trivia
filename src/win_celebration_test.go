@@ -29,6 +29,7 @@ func TestWinCelebrationUpload(t *testing.T) {
 	}
 	gsDatabase.SetEnvVarPrefix("TIMELINE_TRIVIA")
 	gsAuth.SetCookiePrefix("CARD-TIMELINE")
+	gsApiUser.SetMaxWinGifBytes(1000 * 1024) // matches main.go's startup config
 	if _, err := gsDatabase.CreateDatabaseConnection(); err != nil {
 		t.Fatalf("db: %v", err)
 	}
@@ -126,23 +127,25 @@ func TestWinCelebrationUpload(t *testing.T) {
 	}
 }
 
-// Regression test for a real GIF (routinely well over 60 KB) appearing to
-// silently fail on upload. httptest.NewRecorder (used above) never touches a
-// real socket, so it can't reproduce this: the old code capped
-// http.MaxBytesReader/ParseMultipartForm at ~64 KB, the same size as the
-// business rule, so any legitimately larger file tripped that cap mid-read
-// and Go aborted the connection while the client was still writing it — a
-// TCP reset the browser reports as net::ERR_CONNECTION_RESET, not the
-// intended 400 response. This drives the real handler over a real
-// httptest.NewServer loopback connection with an oversized-but-realistic
-// (300 KB) file and asserts a clean HTTP response comes back rather than a
-// transport error.
+// Regression test for a real GIF appearing to silently fail on upload.
+// httptest.NewRecorder (used above) never touches a real socket, so it can't
+// reproduce this: capping http.MaxBytesReader/ParseMultipartForm at the same
+// size as the business rule meant any legitimately larger file tripped that
+// cap mid-read and Go aborted the connection while the client was still
+// writing it — a TCP reset the browser reports as net::ERR_CONNECTION_RESET,
+// not the intended 400 response. The fix rejects on the client's declared
+// Content-Length before ever reading the body, so the connection is never
+// cut mid-stream. This drives the real handler over a real
+// httptest.NewServer loopback connection with a file well over the
+// configured 1000 KB limit and asserts a clean HTTP response comes back
+// rather than a transport error.
 func TestWinCelebrationOversizedUploadOverRealConnection(t *testing.T) {
 	if !strings.HasPrefix(os.Getenv("TIMELINE_TRIVIA_SQL_DATABASE"), "tt_e2e") {
 		t.Skip("set TIMELINE_TRIVIA_SQL_DATABASE=tt_e2e")
 	}
 	gsDatabase.SetEnvVarPrefix("TIMELINE_TRIVIA")
 	gsAuth.SetCookiePrefix("CARD-TIMELINE")
+	gsApiUser.SetMaxWinGifBytes(1000 * 1024) // matches main.go's startup config
 	if _, err := gsDatabase.CreateDatabaseConnection(); err != nil {
 		t.Fatalf("db: %v", err)
 	}
@@ -167,10 +170,9 @@ func TestWinCelebrationOversizedUploadOverRealConnection(t *testing.T) {
 	cookieRec := httptest.NewRecorder()
 	gsAuth.SetUserId(cookieRec, userId)
 
-	// 300 KB: bigger than the old ~64 KB cap, well under the new 10 MB cap,
-	// and still correctly over the 60 KB rule — must come back as a clean
-	// 400, not a broken connection.
-	oversized := append([]byte("GIF89a"), bytes.Repeat([]byte{0x42}, 300*1024)...)
+	// 1200 KB: comfortably over the configured 1000 KB limit — must come
+	// back as a clean 400, not a broken connection.
+	oversized := append([]byte("GIF89a"), bytes.Repeat([]byte{0x42}, 1200*1024)...)
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
 	fw, _ := mw.CreateFormFile("winGif", "big.gif")
@@ -194,6 +196,6 @@ func TestWinCelebrationOversizedUploadOverRealConnection(t *testing.T) {
 	respBody, _ := io.ReadAll(resp.Body)
 	t.Logf("status=%d body=%q", resp.StatusCode, string(respBody))
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400 for a 300 KB file, got %d: %s", resp.StatusCode, respBody)
+		t.Errorf("expected 400 for a 1200 KB file, got %d: %s", resp.StatusCode, respBody)
 	}
 }

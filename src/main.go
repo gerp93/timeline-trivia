@@ -46,6 +46,7 @@ func main() {
 		AdminPaths: []string{"/users", "/categories", "/flagged-cards"},
 	})
 	gsDatabase.SetEnvVarPrefix("TIMELINE_TRIVIA")
+	gsApiUser.SetMaxWinGifBytes(1000 * 1024)
 
 	db, err := gsDatabase.CreateDatabaseConnection()
 	dbConnectAttemptCount := 0
