@@ -37,6 +37,10 @@ type resultPayload struct {
 	UserId        string `json:"userId,omitempty"`
 	Celebration   string `json:"celebration,omitempty"`
 	HasGif        bool   `json:"hasGif,omitempty"`
+	// NextPlayerName is who the client should run its "next up" countdown
+	// for once this popup clears. Omitted when there is no next turn — the
+	// game just ended.
+	NextPlayerName string `json:"nextPlayerName,omitempty"`
 }
 
 // announce posts a line to the lobby chat. Everything interpolated into msg
@@ -63,6 +67,15 @@ func sendResult(lobbyId uuid.UUID, payload resultPayload) {
 		return
 	}
 	gsWebsocket.LobbyBroadcast(lobbyId, "result:"+string(encoded))
+}
+
+// sendStatus updates the bottom-of-screen status line for every client
+// without showing a popup, for game events that aren't a guess outcome (e.g.
+// Skip & Remove). msg should read the same as the paired chat announcement
+// (see announce), just without color tokens and already unescaped — the
+// status line renders as plain text, not innerHTML.
+func sendStatus(lobbyId uuid.UUID, msg string) {
+	gsWebsocket.LobbyBroadcast(lobbyId, "status:"+msg)
 }
 
 // turnOrderNames renders a game's active players in turn order, for the
@@ -428,7 +441,7 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 				log.Println(logErr)
 			}
 			announce(lobbyId, fmt.Sprintf(
-				"<green>%s</> placed \"%s\" correctly — it was %s.",
+				"<green>%s placed \"%s\" correctly — it was %s.</>",
 				esc(player.Name), esc(guessedCard.CardText), esc(guessedYear),
 			))
 			announce(lobbyId, fmt.Sprintf("<green>%s wins the game!</>", esc(player.Name)))
@@ -448,7 +461,7 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		}
 
 		announce(lobbyId, fmt.Sprintf(
-			"<green>%s</> placed \"%s\" correctly — it was %s.",
+			"<green>%s placed \"%s\" correctly — it was %s.</>",
 			esc(player.Name), esc(guessedCard.CardText), esc(guessedYear),
 		))
 
@@ -462,13 +475,14 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		}
 
 		sendResult(lobbyId, resultPayload{
-			PlayerName:    player.Name,
-			Type:          "correct",
-			Message:       fmt.Sprintf("Correct! It was %s.", guessedYear),
-			BottomMessage: fmt.Sprintf("%s placed \"%s\" correctly — it was %s.", player.Name, guessedCard.CardText, guessedYear),
-			UserId:        userId.String(),
-			Celebration:   celebration,
-			HasGif:        hasGif,
+			PlayerName:     player.Name,
+			Type:           "correct",
+			Message:        fmt.Sprintf("Correct! It was %s.", guessedYear),
+			BottomMessage:  fmt.Sprintf("%s placed \"%s\" correctly — it was %s.", player.Name, guessedCard.CardText, guessedYear),
+			UserId:         userId.String(),
+			Celebration:    celebration,
+			HasGif:         hasGif,
+			NextPlayerName: currentPlayerName(game.Id),
 		})
 		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
@@ -505,10 +519,11 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		}
 
 		sendResult(lobbyId, resultPayload{
-			PlayerName:    player.Name,
-			Type:          "revealed",
-			Message:       fmt.Sprintf("Everyone missed! It was %s. Card discarded.", revealedYear),
-			BottomMessage: fmt.Sprintf("Nobody got \"%s\" — it was %s. Card discarded.", revealedCard.CardText, revealedYear),
+			PlayerName:     player.Name,
+			Type:           "revealed",
+			Message:        fmt.Sprintf("Everyone missed! It was %s. Card discarded.", revealedYear),
+			BottomMessage:  fmt.Sprintf("Nobody got \"%s\" — it was %s. Card discarded.", revealedCard.CardText, revealedYear),
+			NextPlayerName: currentPlayerName(game.Id),
 		})
 		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
@@ -530,14 +545,15 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 	// would spoil the steal.
 	nextName := currentPlayerName(game.Id)
 	announce(lobbyId, fmt.Sprintf(
-		"<red>%s</> guessed wrong on \"%s\" — %s can steal it.",
+		"<red>%s guessed wrong on \"%s\" — %s can steal it.</>",
 		esc(player.Name), esc(guessedCard.CardText), esc(nextName),
 	))
 	sendResult(lobbyId, resultPayload{
-		PlayerName:    player.Name,
-		Type:          "incorrect",
-		Message:       "Wrong! Next player can steal it.",
-		BottomMessage: fmt.Sprintf("%s guessed wrong on \"%s\" — %s can steal it.", player.Name, guessedCard.CardText, nextName),
+		PlayerName:     player.Name,
+		Type:           "incorrect",
+		Message:        "Wrong! Next player can steal it.",
+		BottomMessage:  fmt.Sprintf("%s guessed wrong on \"%s\" — %s can steal it.", player.Name, guessedCard.CardText, nextName),
+		NextPlayerName: nextName,
 	})
 	gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 	w.WriteHeader(http.StatusOK)
@@ -750,6 +766,13 @@ func GetCurrentCard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A steal in progress (current guesser isn't who the round started with)
+	// means someone already guessed wrong on this exact card — flagging it
+	// now would erase evidence it might just be a hard card, not a bad one.
+	// Skip & Remove is only offered to whoever the round opened with.
+	isSteal := game.CurrentPlayerId.Valid && game.RoundStarterPlayerId.Valid &&
+		game.CurrentPlayerId.UUID != game.RoundStarterPlayerId.UUID
+
 	tmpl, err := template.ParseFS(
 		static.StaticFiles,
 		"html/components/timeline-trivia/current-card.html",
@@ -765,6 +788,7 @@ func GetCurrentCard(w http.ResponseWriter, r *http.Request) {
 		Attempts         []database.TimelineTriviaCardAttempt
 		LobbyId          uuid.UUID
 		IsCurrentGuesser bool
+		IsSteal          bool
 	}
 
 	_ = tmpl.Execute(w, data{
@@ -772,6 +796,7 @@ func GetCurrentCard(w http.ResponseWriter, r *http.Request) {
 		Attempts:                  attempts,
 		LobbyId:                   lobbyId,
 		IsCurrentGuesser:          isCurrentGuesser,
+		IsSteal:                   isSteal,
 	})
 }
 
@@ -847,6 +872,14 @@ func SkipAndRemoveCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A steal in progress means someone already guessed wrong on this exact
+	// card; only whoever the round opened with may flag it (see GetCurrentCard).
+	if game.RoundStarterPlayerId.Valid && game.CurrentPlayerId.UUID != game.RoundStarterPlayerId.UUID {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("this card already has a guess on it and can no longer be removed"))
+		return
+	}
+
 	currentCard, err := database.GetTimelineTriviaCurrentCard(game.Id)
 	if err != nil || currentCard.CardId == uuid.Nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -863,6 +896,10 @@ func SkipAndRemoveCard(w http.ResponseWriter, r *http.Request) {
 	announce(lobbyId, fmt.Sprintf(
 		"<red>%s</> flagged \"%s\" for review — removed from this game.",
 		esc(player.Name), esc(currentCard.CardText),
+	))
+	sendStatus(lobbyId, fmt.Sprintf(
+		"%s flagged \"%s\" for review — removed from this game.",
+		player.Name, currentCard.CardText,
 	))
 	gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 
@@ -912,11 +949,11 @@ func TimeoutPass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	announce(lobbyId, fmt.Sprintf("<red>%s</> ran out of time — passing.", esc(player.Name)))
-
 	if roundExhausted {
 		// Nobody guessed this card in time; it's discarded like any other
-		// exhausted round, with the answer revealed.
+		// exhausted round, with the answer revealed. Matches PlaceCard's
+		// exhausted branch: the final miss (here, timeout) doesn't get its
+		// own chat line, it just folds into "Nobody got it".
 		revealedCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
 		revealedYear := database.FormatYear(revealedCard.CardYear)
 
@@ -939,10 +976,11 @@ func TimeoutPass(w http.ResponseWriter, r *http.Request) {
 		}
 
 		sendResult(lobbyId, resultPayload{
-			PlayerName:    player.Name,
-			Type:          "revealed",
-			Message:       fmt.Sprintf("Time ran out! It was %s. Card discarded.", revealedYear),
-			BottomMessage: fmt.Sprintf("Nobody got \"%s\" — it was %s. Card discarded.", revealedCard.CardText, revealedYear),
+			PlayerName:     player.Name,
+			Type:           "revealed",
+			Message:        fmt.Sprintf("Time ran out! It was %s. Card discarded.", revealedYear),
+			BottomMessage:  fmt.Sprintf("Nobody got \"%s\" — it was %s. Card discarded.", revealedCard.CardText, revealedYear),
+			NextPlayerName: currentPlayerName(game.Id),
 		})
 		gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 		w.WriteHeader(http.StatusOK)
@@ -957,11 +995,16 @@ func TimeoutPass(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nextName := currentPlayerName(game.Id)
+	announce(lobbyId, fmt.Sprintf(
+		"<red>%s ran out of time — %s can steal it.</>",
+		esc(player.Name), esc(nextName),
+	))
 	sendResult(lobbyId, resultPayload{
-		PlayerName:    player.Name,
-		Type:          "incorrect",
-		Message:       "Out of time!",
-		BottomMessage: fmt.Sprintf("%s ran out of time — %s can steal it.", player.Name, nextName),
+		PlayerName:     player.Name,
+		Type:           "incorrect",
+		Message:        "Out of time!",
+		BottomMessage:  fmt.Sprintf("%s ran out of time — %s can steal it.", player.Name, nextName),
+		NextPlayerName: nextName,
 	})
 	gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
 

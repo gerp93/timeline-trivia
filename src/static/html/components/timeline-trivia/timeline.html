@@ -9,7 +9,7 @@
     </div>
     {{end}}
     {{range $pIndex, $player := .AllTimelines}}
-    <div class="player-timeline-row {{if $player.IsMe}}is-me{{end}} {{if $player.IsCurrent}}is-current{{end}}">
+    <div class="player-timeline-row {{if $player.IsMe}}is-me{{end}} {{if $player.IsCurrent}}is-current{{else}}is-collapsed{{end}}">
         <div class="timeline-horizontal">
             {{if eq (len $player.Timeline) 0}}
             {{if and $player.HasAttempt (eq $player.AttemptedPosition 0)}}
@@ -29,8 +29,7 @@
                 <button class="place-slot-button"
                         hx-post="/api/timeline-trivia/{{$.LobbyId}}/place-card"
                         hx-vals='{"position": 0}'
-                        hx-target="#timeline-trivia-message"
-                        hx-swap="innerHTML">
+                        hx-swap="none">
                     <span class="slot-arrow">◀</span>
                 </button>
             </div>
@@ -55,8 +54,7 @@
                 <button class="place-slot-button"
                         hx-post="/api/timeline-trivia/{{$.LobbyId}}/place-card"
                         hx-vals='{"position": {{add $index 1}}}'
-                        hx-target="#timeline-trivia-message"
-                        hx-swap="innerHTML">
+                        hx-swap="none">
                     {{if eq (add $index 1) (len $player.Timeline)}}
                     <span class="slot-arrow">▶</span>
                     {{else}}

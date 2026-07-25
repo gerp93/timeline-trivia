@@ -165,14 +165,37 @@ chip per active range — keep that in sync if the range shape changes.
 ## Real-time (websocket) pattern
 
 Messages over the socket are **short control strings, not structured
-payloads** (`refresh`, `reload`, `result:...`, `chat:...`, `alert:...`,
-`kick`). The server broadcasts a hint and the browser
-(`src/static/js/timeline-trivia.js`) reacts by re-fetching the relevant HTML
-fragment via `htmx.ajax`/`fetch` from `/api/timeline-trivia/{lobbyId}/...`
-routes. HTML is never pushed over the socket. Chat message rendering
-(color tokens, timestamp, history trim) is **shared with card-judge** via
-`gameshell-framework`'s `static/js/chat.js` (`window.gsChat`), mounted at
-`/gs/js/chat.js` — do not reintroduce a local copy.
+payloads**, except `result:`, whose payload is JSON (below). Control strings:
+`refresh`, `reload`, `result:<json>`, `status:<text>`, `chat:...`, `alert:...`,
+`lobbyMessage:<text>`, `turnTimer:<seconds>`, `kick`. The server broadcasts a
+hint and the browser (`src/static/js/timeline-trivia.js`) reacts by
+re-fetching the relevant HTML fragment via `htmx.ajax`/`fetch` from
+`/api/timeline-trivia/{lobbyId}/...` routes. HTML is never pushed over the
+socket. Chat message rendering (color tokens, timestamp, history trim) is
+**shared with card-judge** via `gameshell-framework`'s `static/js/chat.js`
+(`window.gsChat`), mounted at `/gs/js/chat.js` — do not reintroduce a local
+copy.
+
+**The bottom-of-screen status line and result popup are driven only by the
+websocket, never by an HTTP response.** `result:` carries a `bottomMessage`
+that every client (including whoever acted) writes into
+`#timeline-trivia-message`; `status:` is the same idea without a popup, for
+non-guess events like Skip & Remove. The place-card/skip-card buttons
+(`timeline.html`, `current-card.html`) use `hx-swap="none"` specifically so
+htmx never swaps the HTTP response into that div — a `hx-target`/`hx-swap`
+pointed at `#timeline-trivia-message` previously let the acting player's own
+response race the websocket broadcast and overwrite it, so only that one
+player saw different text than everyone else. Don't reintroduce an
+`hx-target` on those buttons; if a handler needs to tell the *acting* browser
+something no one else should see, that's what the plain-text HTTP response
+body is still for (it's just not rendered anywhere by default).
+
+`result:`'s `nextPlayerName` field (omitted when the game just ended) is who
+the client should run a "3, 2, 1, `<name>`'s turn" countdown for once the
+result popup clears, before the real per-turn timer starts — see
+`showTurnCountdown`/`deferTimerStart` in `timeline-trivia.js`. The timer must
+never visibly start (or keep ticking) behind a popup; `deferTimerStart` gates
+`restartTurnTimer` for exactly that window.
 
 Note the `reload` case specifically waits ~500ms before refreshing rather
 than doing a full page navigation: a `location.reload()` drops the websocket
@@ -215,11 +238,25 @@ plain buttons. External links additionally take `target="_blank"`.
   separately from `gameshell-framework` and card-judge).
 - Deployment tooling lives in the separate `gameshell-deploy` repo; this repo
   only keeps `deploy.conf` + `backups/`.
-- There is no automated test suite for the game itself (`tests/` holds setup
-  helpers and a standalone theme-validator, each with their own `go.mod`);
-  **verify game changes by running the app and playing through the affected
-  flow** (create a lobby, optionally with a year-range filter, join with two
-  players, place cards correctly and incorrectly, confirm a win).
+- `tests/` holds setup helpers and a standalone theme-validator, each with
+  their own `go.mod` — unrelated to the game itself.
+- Game-level automated coverage lives in `src/`: `e2e_test.go` drives the real
+  HTTP handlers against a real database with real websocket clients (sessions
+  minted via `auth.SetUserId`, valid in-process since the framework's signing
+  secret is per-process) — it's the main regression net for turn order,
+  steals, timeouts, chat/status-line text, and Skip & Remove. It refuses to
+  run unless `TIMELINE_TRIVIA_SQL_DATABASE` starts with `tt_e2e`, since it
+  seeds and mutates freely: `TIMELINE_TRIVIA_SQL_DATABASE=tt_e2e go test ./...`
+  against a throwaway database (create it first; the schema runner creates
+  tables but not the database itself). `win_celebration_test.go` (same
+  `tt_e2e` requirement) covers the account-page GIF/PNG upload and message
+  length limit. `database/timeline-trivia_test.go` covers pure-function
+  bounds (e.g. `ValidateCardsToWin`) with no DB needed.
+- Still **verify UI/visual changes by running the app and playing through the
+  affected flow** (create a lobby, optionally with a year-range filter, join
+  with two players, place cards correctly and incorrectly, confirm a win) —
+  the automated tests exercise the Go handlers and JS logic, not layout,
+  color contrast, or animation.
 
 ## Known quirks (preserve unless explicitly changing)
 
@@ -232,3 +269,11 @@ plain buttons. External links additionally take `target="_blank"`.
   after restarting locally you'll need to log back in.
 - A card with `CARD_YEAR IS NULL` is authored-but-incomplete; it's silently
   excluded from every draw pile rather than erroring.
+- `ResetTimelineTriviaGame` deliberately does **not** clear
+  `TIMELINE_TRIVIA_PLAYER_ORDER`. `ShuffleTimelineTriviaPlayerOrder` (called
+  from `StartTimelineTriviaGame`) needs the still-there rows as the "previous
+  order" baseline so it can guarantee the new shuffle differs from the last
+  game's — not just probably differ, which a fresh `rand.Shuffle` alone only
+  gives you (1/N! chance of reproducing the same order by pure luck). If you
+  re-add a clear-on-reset, that guarantee silently degrades back to
+  probabilistic.

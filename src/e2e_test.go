@@ -287,6 +287,15 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 		t.Fatalf("expected 3 players in order, got %v", order1)
 	}
 	t.Logf("turn order after start: %v", order1)
+	// The very first shuffle's "previous" baseline is JOIN_ORDER (no
+	// TIMELINE_TRIVIA_PLAYER_ORDER rows exist yet), and
+	// ShuffleTimelineTriviaPlayerOrder guarantees the new order differs from
+	// that baseline — so the first game is provably shuffled, not merely
+	// "probably" (it can never just fall back to join order by chance).
+	joinOrder := []string{players[0].name, players[1].name, players[2].name}
+	if strings.Join(order1, ",") == strings.Join(joinOrder, ",") {
+		t.Errorf("first game's order equals plain join order %v — shuffle guarantee not holding", joinOrder)
+	}
 
 	startMsgs := drain(players[1])
 	foundOrderChat := false
@@ -346,6 +355,9 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 		if payloads[0]["type"] != "incorrect" {
 			t.Errorf("%s expected type=incorrect, got %v", p.name, payloads[0]["type"])
 		}
+		if next, _ := payloads[0]["nextPlayerName"].(string); next == "" {
+			t.Errorf("%s: wrong-guess result had no nextPlayerName", p.name)
+		}
 		t.Logf("%s bottomMessage: %q", p.name, bm)
 
 		for _, l := range chatLines(msgs) {
@@ -366,6 +378,37 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 	}
 	if currentPlayer().playerId == guesser.playerId {
 		t.Errorf("card did not pass to the next guesser after a miss")
+	}
+
+	// ================= 2a. skip & remove is refused mid-steal ===============
+	// The current guesser right now is a stealer (someone already missed this
+	// exact card), not who the round opened with — Skip & Remove must be
+	// off-limits so a bad guess can't be laundered into "the card was bad".
+	stealer := currentPlayer()
+	stealGame, err := database.GetTimelineTriviaGameById(gameId)
+	if err != nil {
+		t.Fatalf("get game: %v", err)
+	}
+	if !stealGame.RoundStarterPlayerId.Valid || stealGame.CurrentPlayerId.UUID == stealGame.RoundStarterPlayerId.UUID {
+		t.Fatalf("test setup assumption broken: expected a steal in progress (current != round starter)")
+	}
+	rec = serve(apiTimelineTrivia.SkipAndRemoveCard, authedRequest(t, "POST",
+		"/api/timeline-trivia/"+lobbyId.String()+"/skip-card", url.Values{}, stealer.userId))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("skip during a steal should be rejected, got %d %s", rec.Code, rec.Body.String())
+	}
+	// The card must still be there — a rejected skip must not have flagged it.
+	stillCurrent, _ := database.GetTimelineTriviaCurrentCard(gameId)
+	if stillCurrent.CardId != card.CardId {
+		t.Errorf("card changed despite a rejected skip: had %s, now %s", card.CardId, stillCurrent.CardId)
+	}
+	// The HTML fragment must not render the button for this viewer either —
+	// the server-side rejection above is a backstop, not the only guard.
+	cardHTML := httptest.NewRecorder()
+	cardReq := authedRequest(t, "GET", "/api/timeline-trivia/"+lobbyId.String()+"/current-card", nil, stealer.userId)
+	gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimelineTrivia.GetCurrentCard)).ServeHTTP(cardHTML, cardReq)
+	if strings.Contains(cardHTML.Body.String(), "Skip &amp; Remove") {
+		t.Errorf("current-card fragment offered Skip & Remove to a stealer:\n%s", cardHTML.Body.String())
 	}
 
 	// ================= 3. timeout pass, no penalty ==========================
@@ -426,6 +469,9 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 				if bm, _ := pl["bottomMessage"].(string); !strings.Contains(bm, database.FormatYear(lastCard.CardYear)) {
 					t.Errorf("reveal bottomMessage missing the year: %q", bm)
 				}
+				if next, _ := pl["nextPlayerName"].(string); next == "" {
+					t.Errorf("%s: revealed result had no nextPlayerName", p.name)
+				}
 			}
 		}
 		for _, l := range chatLines(msgs) {
@@ -483,6 +529,9 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 			}
 			if bm, _ := pl["bottomMessage"].(string); bm == "" {
 				t.Errorf("%s: correct result had no bottomMessage", p.name)
+			}
+			if next, _ := pl["nextPlayerName"].(string); next == "" {
+				t.Errorf("%s: non-winning correct result had no nextPlayerName", p.name)
 			}
 		}
 		for _, l := range chatLines(msgs) {
@@ -608,15 +657,18 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 		t.Errorf("turn timer should be 30, got %d (%v)", secs, err)
 	}
 
-	// ================= 11. reset reshuffles the order =======================
-	// Force a finish so ResetGame is legal, then confirm a restart reorders.
+	// ================= 11. every restart's order differs from the last ======
+	// Force a finish so ResetGame is legal, then confirm each restart
+	// reorders. This is now a deterministic guarantee (see
+	// ShuffleTimelineTriviaPlayerOrder), not just a likelihood — so unlike a
+	// probabilistic check, every single iteration must differ, not just one
+	// eventually.
 	if err := gsDatabase.Execute(
 		"UPDATE TIMELINE_TRIVIA_GAME SET GAME_STATUS = 'finished' WHERE ID = ?", gameId); err != nil {
 		t.Fatalf("force finish: %v", err)
 	}
-	differed := false
 	prev := strings.Join(turnOrder(), ",")
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 5; i++ {
 		rec = serve(apiTimelineTrivia.ResetGame, authedRequest(t, "POST",
 			"/api/timeline-trivia/"+lobbyId.String()+"/reset", url.Values{}, players[0].userId))
 		if rec.Code != http.StatusOK {
@@ -629,10 +681,10 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 		}
 		now := strings.Join(turnOrder(), ",")
 		t.Logf("restart %d order: %s", i+1, now)
-		if now != prev {
-			differed = true
-			break
+		if now == prev {
+			t.Errorf("restart %d produced the same order as the previous game: %s", i+1, now)
 		}
+		prev = now
 		if err := gsDatabase.Execute(
 			"UPDATE TIMELINE_TRIVIA_GAME SET GAME_STATUS = 'finished' WHERE ID = ?", gameId); err != nil {
 			t.Fatalf("force finish: %v", err)
@@ -640,8 +692,5 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 		for _, p := range players {
 			drain(p)
 		}
-	}
-	if !differed {
-		t.Errorf("turn order never changed across 12 restarts — is the shuffle running?")
 	}
 }

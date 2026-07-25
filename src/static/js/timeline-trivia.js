@@ -13,6 +13,13 @@ let timelineTriviaTurnTimerSeconds = 0;
 const STATUS_MESSAGE_MS = 8000;
 let statusMessageTimeout = null;
 
+// True from the moment a "result:" (correct/incorrect/revealed) popup is
+// requested until that popup — and, if the timer is on, the turn-countdown
+// popup after it — has finished. While true, restartTurnTimer defers: the
+// clock must not start (or keep ticking) behind a full-screen popup that
+// covers the board.
+let deferTimerStart = false;
+
 function initTimelineTriviaWebSocket(lobbyId, playerId, turnTimerSeconds) {
     timelineTriviaTurnTimerSeconds = parseInt(turnTimerSeconds) || 0;
 
@@ -92,7 +99,34 @@ function initTimelineTriviaWebSocket(lobbyId, playerId, turnTimerSeconds) {
             }
             // Everyone sees what happened, not just the player who acted.
             showStatusMessage(payload.bottomMessage);
-            showResultPopup(payload);
+
+            // Freeze the visible clock immediately — it belongs to a turn
+            // that just ended, and must not keep ticking (or hit zero)
+            // behind the result popup.
+            deferTimerStart = true;
+            if (typeof gsTimer !== "undefined") gsTimer.stop();
+
+            showResultPopup(payload, () => {
+                const next = payload.nextPlayerName;
+                if (next && timelineTriviaTurnTimerSeconds > 0) {
+                    // Only once this second popup clears does the board
+                    // "reopen" and the real timer start.
+                    showTurnCountdown(next, () => {
+                        deferTimerStart = false;
+                        doRestartTurnTimer(lobbyId);
+                    });
+                } else {
+                    deferTimerStart = false;
+                    doRestartTurnTimer(lobbyId);
+                }
+            });
+            return;
+        }
+
+        // Lightweight status-line-only update, for events that aren't a
+        // guess outcome (e.g. Skip & Remove) and so don't get a popup.
+        if (messageText.startsWith("status:")) {
+            showStatusMessage(messageText.substring("status:".length));
             return;
         }
 
@@ -194,10 +228,21 @@ function refreshControls(lobbyId) {
         .catch(e => console.error("[TimelineTrivia] controls refresh error:", e));
 }
 
-// restartTurnTimer runs the countdown afresh for the current guesser's turn.
-// Everyone watches the same clock, but only the guesser's own browser reports
-// the timeout — the server re-checks whose turn it is regardless.
+// restartTurnTimer is the guarded entry point every refresh path calls. It
+// defers to doRestartTurnTimer immediately UNLESS a result/countdown popup
+// sequence is in flight, in which case that sequence's own completion
+// callback is what eventually starts the clock (see the "result:" handler).
 function restartTurnTimer(lobbyId) {
+    if (deferTimerStart) return;
+    doRestartTurnTimer(lobbyId);
+}
+
+// doRestartTurnTimer runs the countdown afresh for the current guesser's
+// turn, unconditionally — callers are responsible for the "not while a popup
+// is showing" rule above. Everyone watches the same clock, but only the
+// guesser's own browser reports the timeout — the server re-checks whose
+// turn it is regardless.
+function doRestartTurnTimer(lobbyId) {
     const timerEl = document.getElementById("turn-timer");
     if (!timerEl || typeof gsTimer === "undefined") return;
 
@@ -222,6 +267,58 @@ function restartTurnTimer(lobbyId) {
         fetch("/api/timeline-trivia/" + lobbyId + "/timeout", { method: "POST" })
             .catch(e => console.error("[TimelineTrivia] timeout error:", e));
     });
+}
+
+// showTurnCountdown plays a 3-2-1 countdown naming who's up next, then calls
+// onDone. Shown between the result popup clearing and the real timer
+// starting, so nobody sees the board "reopen" until the clock is genuinely
+// about to run. Only called when a turn timer is configured — see the
+// "result:" handler, which skips straight to onDone when it's off.
+function showTurnCountdown(nextPlayerName, onDone) {
+    const existing = document.querySelector(".timeline-trivia-popup-backdrop");
+    if (existing) existing.remove();
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "timeline-trivia-popup-backdrop";
+
+    const popup = document.createElement("div");
+    popup.className = "timeline-trivia-popup turn-countdown";
+
+    const numberEl = document.createElement("div");
+    numberEl.className = "countdown-number";
+    popup.appendChild(numberEl);
+
+    const nameEl = document.createElement("div");
+    nameEl.className = "countdown-name";
+    nameEl.textContent = nextPlayerName + "'s turn";
+    popup.appendChild(nameEl);
+
+    backdrop.appendChild(popup);
+    document.body.appendChild(backdrop);
+
+    let finished = false;
+    let count = 3;
+    numberEl.textContent = count;
+
+    function finish() {
+        if (finished) return;
+        finished = true;
+        clearInterval(interval);
+        backdrop.remove();
+        if (typeof onDone === "function") onDone();
+    }
+
+    const interval = setInterval(() => {
+        count -= 1;
+        if (count > 0) {
+            numberEl.textContent = count;
+        } else {
+            finish();
+        }
+    }, 1000);
+
+    // Click to skip the countdown, same as the result popup allows.
+    backdrop.addEventListener("click", finish);
 }
 
 function addChatMessage(message) {
@@ -258,8 +355,9 @@ function showAlert(message) {
 
 // showResultPopup renders the guess-outcome modal. On a correct guess it also
 // shows the winner's personal celebration GIF/message if they set one on their
-// account page.
-function showResultPopup(payload) {
+// account page. onDone fires exactly once, whether the popup auto-dismisses
+// or is clicked away.
+function showResultPopup(payload, onDone) {
     // Remove any existing popup
     const existing = document.querySelector(".timeline-trivia-popup-backdrop");
     if (existing) existing.remove();
@@ -312,16 +410,21 @@ function showResultPopup(payload) {
     backdrop.appendChild(popup);
     document.body.appendChild(backdrop);
 
+    let finished = false;
+    function finish() {
+        if (finished) return;
+        finished = true;
+        clearTimeout(dismissTimer);
+        backdrop.remove();
+        if (typeof onDone === "function") onDone();
+    }
+
     // Auto-remove; "revealed" and celebrations get extra time to read
     let dismissAfter = 2000;
     if (isRevealed) dismissAfter = 5000;
     if (hasCelebration) dismissAfter = 5000;
-    setTimeout(() => {
-        backdrop.remove();
-    }, dismissAfter);
+    const dismissTimer = setTimeout(finish, dismissAfter);
 
     // Also allow click to dismiss
-    backdrop.addEventListener("click", () => {
-        backdrop.remove();
-    });
+    backdrop.addEventListener("click", finish);
 }

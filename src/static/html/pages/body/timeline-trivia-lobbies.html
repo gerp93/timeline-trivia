@@ -46,7 +46,7 @@
                 required="required"
                 oninput="scheduleCardCountRecalc()"
             />
-            <span id="cards-to-win-warning" style="display: block; font-size: 0.85em; color: var(--color-accent-red, #f85149);"></span>
+            <span id="cards-to-win-warning" style="grid-column: 1 / -1; display: block; font-size: 0.85em; color: var(--color-accent-red, #f85149);"></span>
             <label for="createTimelineTriviaTurnTimer">Turn Timer</label>
             <select
                 id="createTimelineTriviaTurnTimer"
@@ -88,7 +88,7 @@
                     name="password"
                     maxlength="255"
                     placeholder="Enter Password"
-                    autocomplete="off"
+                    autocomplete="new-password"
                 />
             </div>
         </details>

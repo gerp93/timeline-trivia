@@ -35,11 +35,20 @@ const MinCardsPerWinRatio = 4
 // with — below this the game ends almost as soon as it starts.
 const MinCardsToWin = 5
 
-// ValidateCardsToWin returns a descriptive error if totalCards isn't enough
-// to safely support the given CardsToWin target (see MinCardsPerWinRatio).
+// MaxCardsToWin is the largest "cards to win" a lobby can be configured
+// with. Matches the lobby-creation form's max="20"; enforced here too since
+// the form value is only a client-side hint.
+const MaxCardsToWin = 20
+
+// ValidateCardsToWin returns a descriptive error if cardsToWin is out of
+// range, or totalCards isn't enough to safely support it (see
+// MinCardsPerWinRatio).
 func ValidateCardsToWin(cardsToWin int, totalCards int) error {
 	if cardsToWin < MinCardsToWin {
 		return fmt.Errorf("cards to win (%d) is below the minimum of %d", cardsToWin, MinCardsToWin)
+	}
+	if cardsToWin > MaxCardsToWin {
+		return fmt.Errorf("cards to win (%d) is above the maximum of %d", cardsToWin, MaxCardsToWin)
 	}
 	minRequired := cardsToWin * MinCardsPerWinRatio
 	if totalCards < minRequired {
@@ -1045,36 +1054,55 @@ func SetTimelineTriviaCurrentPlayer(gameId uuid.UUID, playerId uuid.UUID) error 
 // ShuffleTimelineTriviaPlayerOrder randomizes the game's turn order, replacing
 // any previous one. Called at the start of every game so play order changes
 // between games in the same lobby instead of being frozen at PLAYER.JOIN_ORDER.
+// The new order is guaranteed to differ from the immediately previous one
+// (when more than one permutation is even possible) rather than just being
+// likely to — a fresh rand.Shuffle has a 1/N! chance of reproducing the same
+// sequence by pure luck, which is exactly the case a "different from last
+// time" requirement exists to rule out.
 func ShuffleTimelineTriviaPlayerOrder(gameId uuid.UUID) error {
-	sqlClear := `DELETE FROM TIMELINE_TRIVIA_PLAYER_ORDER WHERE TIMELINE_TRIVIA_GAME_ID = ?`
-	if err := execute(sqlClear, gameId); err != nil {
-		return err
-	}
-
+	// GetTimelineTriviaPlayers orders by the existing TURN_ORDER (falling
+	// back to JOIN_ORDER when no order has ever been set — i.e. the very
+	// first game), so this list doubles as "the previous game's order" to
+	// shuffle away from.
 	players, err := GetTimelineTriviaPlayers(gameId)
 	if err != nil {
 		return err
 	}
 
-	active := make([]uuid.UUID, 0, len(players))
+	previous := make([]uuid.UUID, 0, len(players))
+	next := make([]uuid.UUID, 0, len(players))
 	for _, p := range players {
 		if p.IsActive {
-			active = append(active, p.PlayerId)
+			previous = append(previous, p.PlayerId)
+			next = append(next, p.PlayerId)
 		}
 	}
-	if len(active) == 0 {
+	if len(next) == 0 {
 		return errors.New("no active players to order")
 	}
 
-	rand.Shuffle(len(active), func(i, j int) {
-		active[i], active[j] = active[j], active[i]
-	})
+	// Bounded, not infinite: with exactly one active player there is only
+	// one possible order, so "different from last time" can never be
+	// satisfied — the loop just keeps whatever the final shuffle produced.
+	for attempt := 0; attempt < 20; attempt++ {
+		rand.Shuffle(len(next), func(i, j int) {
+			next[i], next[j] = next[j], next[i]
+		})
+		if !sameUUIDOrder(next, previous) {
+			break
+		}
+	}
+
+	sqlClear := `DELETE FROM TIMELINE_TRIVIA_PLAYER_ORDER WHERE TIMELINE_TRIVIA_GAME_ID = ?`
+	if err := execute(sqlClear, gameId); err != nil {
+		return err
+	}
 
 	sqlInsert := `
 		INSERT INTO TIMELINE_TRIVIA_PLAYER_ORDER (ID, TIMELINE_TRIVIA_GAME_ID, PLAYER_ID, TURN_ORDER)
 		VALUES (?, ?, ?, ?)
 	`
-	for turnOrder, playerId := range active {
+	for turnOrder, playerId := range next {
 		id, err := uuid.NewUUID()
 		if err != nil {
 			log.Println(err)
@@ -1086,6 +1114,20 @@ func ShuffleTimelineTriviaPlayerOrder(gameId uuid.UUID) error {
 	}
 
 	return nil
+}
+
+// sameUUIDOrder reports whether a and b hold the same UUIDs in the same
+// sequence.
+func sameUUIDOrder(a, b []uuid.UUID) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // StartTimelineTriviaGame starts the game by setting status and first player
@@ -1200,11 +1242,10 @@ func ResetTimelineTriviaGame(gameId uuid.UUID) error {
 		return err
 	}
 
-	// Drop the turn order so the next start reshuffles it
-	sqlClearOrder := `DELETE FROM TIMELINE_TRIVIA_PLAYER_ORDER WHERE TIMELINE_TRIVIA_GAME_ID = ?`
-	if err := execute(sqlClearOrder, gameId); err != nil {
-		return err
-	}
+	// Deliberately not clearing TIMELINE_TRIVIA_PLAYER_ORDER here: the next
+	// StartTimelineTriviaGame call reshuffles it anyway, and
+	// ShuffleTimelineTriviaPlayerOrder needs the current rows intact as the
+	// baseline to guarantee the new order differs from this one.
 
 	// Reset draw pile - mark all cards as not drawn, except cards flagged for
 	// admin review during the last game (they stay out of play)

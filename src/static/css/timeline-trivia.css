@@ -327,14 +327,58 @@
     min-height: 0;
 }
 
+/* Deliberately strong, saturated highlight rather than a subtle tint — this
+   is the only visual cue for whose turn it is, so it has to read at a
+   glance. Only the row's own background/border/info-column change; the
+   card boxes inside .timeline-horizontal keep their normal look (they have
+   their own opaque background, unaffected by anything set here). */
 .player-timeline-row.is-current {
     border-color: var(--color-accent-blue);
-    background-color: color-mix(in srgb, var(--color-accent-blue) 12%, var(--color-bg-hover));
-    box-shadow: inset 4px 0 0 var(--color-accent-blue);
+    border-width: 3px;
+    background-color: var(--color-accent-blue);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-blue) 55%, transparent),
+        0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
-.player-timeline-row.is-current .player-info-column .player-name {
-    color: var(--color-accent-blue);
+.player-timeline-row.is-current .player-info-column {
+    background-color: var(--color-accent-blue);
+    border-left-color: var(--color-accent-blue);
+}
+
+.player-timeline-row.is-current .player-info-column .player-name,
+.player-timeline-row.is-current .player-info-column .card-count {
+    color: white;
+}
+
+/* Rows for everyone except the current guesser collapse to year-only chips
+   — full event text only matters to whoever has to decide where to place
+   the card right now. A "guessed here" marker collapses to the same size:
+   once collapsed, only the year matters, and a full-height dummy box would
+   defeat the point of collapsing. */
+.player-timeline-row.is-collapsed .timeline-horizontal {
+    min-height: calc(var(--tt-card-h-collapsed) + 12px);
+}
+
+.player-timeline-row.is-collapsed .timeline-card-box,
+.player-timeline-row.is-collapsed .dummy-card-box {
+    height: var(--tt-card-h-collapsed);
+    min-width: 48px;
+    max-width: 64px;
+    flex: 0 0 auto;
+}
+
+.player-timeline-row.is-collapsed .card-category-badge,
+.player-timeline-row.is-collapsed .card-event-text {
+    display: none;
+}
+
+.player-timeline-row.is-collapsed .card-year-badge {
+    padding: 10px 4px;
+}
+
+.player-timeline-row.is-collapsed .timeline-empty-state {
+    padding: 8px;
+    font-size: 0.85em;
 }
 
 /* Fixed-width info column, always pinned to the right of the row */
@@ -397,6 +441,9 @@
 .timeline-horizontal {
     /* single source of truth for card + placement-slot height */
     --tt-card-h: 190px;
+    /* height of a collapsed (non-current-guesser) row's cards — just enough
+       for the year badge, see .player-timeline-row.is-collapsed */
+    --tt-card-h-collapsed: 46px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -661,6 +708,40 @@
     max-height: 240px;
     margin: 12px auto 0 auto;
     border-radius: 8px;
+}
+
+/* Between-turn "3, 2, 1, <name>'s turn" popup — shown after the result popup
+   clears and (when a turn timer is on) before the real timer starts. */
+.timeline-trivia-popup.turn-countdown {
+    background: linear-gradient(135deg, var(--color-primary-action), var(--color-accent-blue));
+    color: white;
+    padding: 50px 70px;
+}
+
+.timeline-trivia-popup .countdown-number {
+    font-size: 1.6em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 10px;
+    animation: countdownPulse 1s ease-in-out infinite;
+}
+
+.timeline-trivia-popup .countdown-name {
+    font-size: 0.5em;
+    font-weight: normal;
+    opacity: 0.9;
+}
+
+@keyframes countdownPulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+
+    50% {
+        transform: scale(1.15);
+        opacity: 0.85;
+    }
 }
 
 .timeline-trivia-popup .popup-celebration-message {
