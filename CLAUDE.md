@@ -50,8 +50,10 @@ src/
     static.go              embed.FS + SQLFiles (ORDERED game schema
                            manifest, runs AFTER the framework schema)
     sql/                   game tables/triggers under src/static/sql/
-    html/                  pages/ (base.html + body/*) and components/
-                           (HTMX fragments)
+    html/                  pages/body/* (this game's own pages — NOT
+                           base.html, login/users/decks/deck-access/account,
+                           which are framework-owned, see below) and
+                           components/ (HTMX fragments)
     css/ js/ images/
 tests/                    setup + theme-validator tooling (own go.mod each)
 ```
@@ -97,6 +99,47 @@ then triggers.
   own cards (`database.AuditDeckCardsAsDeleted`) in response. If you add more
   game-owned tables that FK to `DECK`, extend this hook, not a trigger on the
   framework's `DECK` table.
+- **The deck detail page (`/deck/{deckId}`) follows the same split**: the
+  chrome (header, Export Deck, the Edit Deck dialog, the danger-zone delete)
+  is `gameshell-framework`'s `deck-detail-chrome.html`; the card table and
+  create/edit-card dialogs — genuinely game-specific, since `CARD_YEAR` +
+  category and the Import Cards feature don't exist in every game — are
+  this repo's own `static/html/pages/body/deck-card-management.html` and
+  `deck-search-controls.html`, composed with the chrome via
+  `gsApiPages.ParseGameFragment` in `api/pages/pages.go`'s `Deck` handler.
+  See the **body-name collision rule** below before touching either side.
+
+## Pages owned by the framework, not this repo
+
+Login, admin user management (`/users`), the deck list (`/decks`), the deck
+password gate (`/deck/{deckId}/access`), `base.html`, and the account page's
+shared chrome (theme picker, name, password, danger-zone) are **not**
+rendered by this repo — they're byte-identical (or were, until reconciled)
+to card-judge's own copies, so `gameshell-framework`'s `api/pages` package
+(`gsApiPages`) owns the template *and* the `http.HandlerFunc`; `main.go`
+mounts them directly (`gsApiPages.Login`, `.Users`, `.Decks`, `.DeckAccess`,
+`.Account`) the same zero-wrapper way `gsApiDeck`'s CRUD handlers are
+mounted. Every page handler this repo still owns parses the framework's
+`base.html` via `gsStatic.StaticFiles`, never a local copy — there isn't
+one anymore.
+
+The account page's win-celebration section is opt-in, not automatic:
+`main.go` calls `gsApiPages.SetAccountPageFeatures(gsApiPages.AccountPageFeatures{WinCelebration: true})`
+at startup. Don't remove that call without also removing the
+`SetWinGif`/`ClearWinGif`/`GetWinGif`/`SetWinMessage` route mounts — the
+section would otherwise render pointing at routes that don't exist.
+
+**Body-name collision rule**: every page body template in this repo and the
+framework defines the same Go template name, `{{define "body"}}` — this
+only works because exactly one body file is ever parsed per request
+(`parseChrome` in `api/pages/pages.go` enforces this: one `ParseFS` call
+against the framework's `base.html`, one against this repo's own body
+file). A composed parse (like `Deck`'s) must never include two files that
+both define `"body"` — `text/template` silently lets the second overwrite
+the first, with no compile-time signal. `deck-card-management.html` and
+`deck-search-controls.html` define distinctly-named blocks
+(`card-header-actions`, `card-management`, `card-search-controls`) for
+exactly this reason — never rename either to `"body"`.
 
 ## Year-range filtering
 
@@ -250,8 +293,13 @@ plain buttons. External links additionally take `target="_blank"`.
   against a throwaway database (create it first; the schema runner creates
   tables but not the database itself). `win_celebration_test.go` (same
   `tt_e2e` requirement) covers the account-page GIF/PNG upload and message
-  length limit. `database/timeline-trivia_test.go` covers pure-function
-  bounds (e.g. `ValidateCardsToWin`) with no DB needed.
+  length limit. `pages_render_test.go` (same requirement) renders the
+  framework-owned pages plus `Deck`'s chrome+fragment composition and
+  asserts on real content — these handlers discard `ExecuteTemplate`'s
+  error, so a template/data mismatch fails silently (a 200 with a truncated
+  body) rather than with a visible error; a status-code-only check would
+  miss that. `database/timeline-trivia_test.go` covers pure-function bounds
+  (e.g. `ValidateCardsToWin`) with no DB needed.
 - Still **verify UI/visual changes by running the app and playing through the
   affected flow** (create a lobby, optionally with a year-range filter, join
   with two players, place cards correctly and incorrectly, confirm a win) —
