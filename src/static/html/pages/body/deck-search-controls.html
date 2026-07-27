@@ -1,0 +1,13 @@
+{{define "card-search-controls"}}
+<label for="textSearch">Search:</label>
+<input
+    type="search"
+    id="textSearch"
+    name="text"
+    maxlength="510"
+    placeholder="Search..."
+    value="{{.Text}}"
+    autocomplete="off"
+    onchange="submitTableFilterForm()"
+/>
+{{end}}

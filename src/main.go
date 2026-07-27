@@ -10,6 +10,7 @@ import (
 	gsApi "github.com/gerp93/gameshell-framework/api"
 	gsApiDeck "github.com/gerp93/gameshell-framework/api/deck"
 	gsApiLobby "github.com/gerp93/gameshell-framework/api/lobby"
+	gsApiPages "github.com/gerp93/gameshell-framework/api/pages"
 	gsApiUser "github.com/gerp93/gameshell-framework/api/user"
 	gsAuth "github.com/gerp93/gameshell-framework/auth"
 	gsDatabase "github.com/gerp93/gameshell-framework/database"
@@ -47,6 +48,7 @@ func main() {
 	})
 	gsDatabase.SetEnvVarPrefix("TIMELINE_TRIVIA")
 	gsApiUser.SetMaxWinGifBytes(1000 * 1024)
+	gsApiPages.SetAccountPageFeatures(gsApiPages.AccountPageFeatures{WinCelebration: true})
 
 	db, err := gsDatabase.CreateDatabaseConnection()
 	dbConnectAttemptCount := 0
@@ -116,14 +118,14 @@ func main() {
 	// pages
 	http.Handle("GET /", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Home)))
 	http.Handle("GET /about", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.About)))
-	http.Handle("GET /login", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Login)))
-	http.Handle("GET /account", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Account)))
-	http.Handle("GET /users", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Users)))
+	http.Handle("GET /login", gsApi.MiddlewareForPages(http.HandlerFunc(gsApiPages.Login)))
+	http.Handle("GET /account", gsApi.MiddlewareForPages(http.HandlerFunc(gsApiPages.Account)))
+	http.Handle("GET /users", gsApi.MiddlewareForPages(http.HandlerFunc(gsApiPages.Users)))
 	http.Handle("GET /categories", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Categories)))
 	http.Handle("GET /flagged-cards", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.FlaggedCards)))
-	http.Handle("GET /decks", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Decks)))
+	http.Handle("GET /decks", gsApi.MiddlewareForPages(http.HandlerFunc(gsApiPages.Decks)))
 	http.Handle("GET /deck/{deckId}", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Deck)))
-	http.Handle("GET /deck/{deckId}/access", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.DeckAccess)))
+	http.Handle("GET /deck/{deckId}/access", gsApi.MiddlewareForPages(http.HandlerFunc(gsApiPages.DeckAccess)))
 
 	// stats pages
 	http.Handle("GET /stats", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Stats)))

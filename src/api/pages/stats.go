@@ -1,7 +1,6 @@
 package apiPages
 
 import (
-	"html/template"
 	"net/http"
 	"sort"
 	"strconv"
@@ -11,7 +10,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/gerp93/timeline-trivia/database"
-	"github.com/gerp93/timeline-trivia/static"
 )
 
 // Stats is the statistics hub: global top decades plus links into the other
@@ -27,11 +25,7 @@ func Stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats.html",
-	)
+	tmpl, err := parseChrome("html/pages/body/stats.html", nil)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to parse HTML"))
@@ -63,11 +57,7 @@ func StatsLeaderboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats-leaderboard.html",
-	)
+	tmpl, err := parseChrome("html/pages/body/stats-leaderboard.html", nil)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to parse HTML"))
@@ -122,11 +112,7 @@ func StatsUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats-users.html",
-	)
+	tmpl, err := parseChrome("html/pages/body/stats-users.html", nil)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to parse HTML"))
@@ -227,11 +213,7 @@ func StatsUser(w http.ResponseWriter, r *http.Request) {
 		return categoriesRanked[i].Rate() > categoriesRanked[j].Rate()
 	})
 
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats-user.html",
-	)
+	tmpl, err := parseChrome("html/pages/body/stats-user.html", nil)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to parse HTML"))
@@ -308,11 +290,7 @@ func StatsCards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats-cards.html",
-	)
+	tmpl, err := parseChrome("html/pages/body/stats-cards.html", nil)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to parse HTML"))
@@ -374,11 +352,7 @@ func StatsCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := template.ParseFS(
-		static.StaticFiles,
-		"html/pages/base.html",
-		"html/pages/body/stats-card.html",
-	)
+	tmpl, err := parseChrome("html/pages/body/stats-card.html", nil)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to parse HTML"))
