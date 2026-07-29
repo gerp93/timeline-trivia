@@ -92,7 +92,10 @@ function goToNextTablePage() {
     }
 }
 
-function goToTablePage(pageNumber) {
+function goToTablePage(pageNumberInput) {
+    const pageNumber = Number(pageNumberInput)
+    if (isNaN(pageNumber)) return;
+
     const pageNumberElement = document.getElementById("pageNumber");
     if (pageNumberElement) {
         if (pageNumberElement.value != pageNumber) {

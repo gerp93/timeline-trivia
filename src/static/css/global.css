@@ -202,3 +202,7 @@ a.no-style {
     margin: auto;
     height: 100%;
 }
+
+.bottom-padding {
+    padding-bottom: var(--content-margin);
+}
