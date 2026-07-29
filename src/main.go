@@ -45,17 +45,19 @@ func main() {
 	})
 	gsDatabase.SetEnvVarPrefix("TIMELINE_TRIVIA")
 	gsApiUser.SetMaxWinGifBytes(1000 * 1024)
-	gsBootstrap.MountFeatures(gsBootstrap.Features{
+	features := gsBootstrap.Features{
 		Decks:          true,
 		WinCelebration: true,
 		LobbyTurnTimer: true,
-	})
+	}
+	gsBootstrap.MountFeatures(features)
 
 	db := gsBootstrap.ConnectWithRetry(6, 10*time.Second)
 	defer db.Close()
 
 	// framework schema first, game schema depends on it
 	gsBootstrap.ApplySchema(gsStatic.StaticFiles, gsStatic.SQLFiles)
+	gsBootstrap.ApplyFeatureSchema(features)
 	gsBootstrap.ApplySchema(static.StaticFiles, static.SQLFiles)
 
 	// Seed a default deck from the embedded starter data, but only if the

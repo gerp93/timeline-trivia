@@ -46,6 +46,15 @@ func setupSchema(t *testing.T) {
 			t.Fatalf("framework schema %s: %v", f, err)
 		}
 	}
+	// This game uses decks, so its schema needs the framework's deck tables
+	// too — mirrors main.go's gsBootstrap.ApplyFeatureSchema(features) call.
+	// Not calling ApplyFeatureSchema itself: it log.Fatalln's on error, which
+	// would abort the whole test binary instead of just failing this test.
+	for _, f := range gsStatic.DeckSQLFiles {
+		if err := gsDatabase.RunFile(f); err != nil {
+			t.Fatalf("framework deck schema %s: %v", f, err)
+		}
+	}
 	for _, f := range static.SQLFiles {
 		if err := runGameFile(f); err != nil {
 			t.Fatalf("game schema %s: %v", f, err)
