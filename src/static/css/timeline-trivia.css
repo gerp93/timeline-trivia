@@ -561,7 +561,7 @@
        affected by that rule and would end up visibly shorter */
     padding: 0;
     margin: 0;
-    border: 2px dashed var(--color-primary-action);
+    border: 2px dashed var(--color-accent-blue);
     border-radius: 8px;
     background-color: transparent;
     cursor: pointer;
@@ -572,7 +572,7 @@
 }
 
 .place-slot-button:hover {
-    background-color: var(--color-primary-action);
+    background-color: var(--color-accent-blue);
     border-style: solid;
     transform: scale(1.1);
 }
@@ -584,26 +584,18 @@
 
 .slot-dot {
     font-size: 24px;
-    color: var(--color-primary-action);
+    color: var(--color-accent-blue);
 }
 
 .slot-arrow {
     font-size: 20px;
-    color: var(--color-primary-action);
-}
-
-/* End slots (first/last) are wider */
-.timeline-slot-end .place-slot-button {
-    width: 40px;
-    border-color: var(--color-accent-blue);
-}
-
-.timeline-slot-end .slot-arrow {
     color: var(--color-accent-blue);
 }
 
-.timeline-slot-end .place-slot-button:hover {
-    background-color: var(--color-accent-blue);
+/* End slots (first/last) are wider — same color as middle slots now, just
+   more room for the arrow glyph */
+.timeline-slot-end .place-slot-button {
+    width: 40px;
 }
 
 .timeline-empty-state {
