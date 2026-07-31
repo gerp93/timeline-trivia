@@ -7,6 +7,19 @@ let timelineTriviaConn = null;
 // reload.
 let timelineTriviaTurnTimerSeconds = 0;
 
+// setTurnTimerSeconds updates the tracked value and shows/hides the "Time:"
+// stat to match. #turn-timer-stat is always rendered (even when the lobby
+// started with the timer off) specifically so this can show it later — a
+// timer turned on mid-game needs the element to already exist for
+// doRestartTurnTimer to find, not just the seconds value to be nonzero.
+function setTurnTimerSeconds(seconds) {
+    timelineTriviaTurnTimerSeconds = parseInt(seconds) || 0;
+    const statEl = document.getElementById("turn-timer-stat");
+    if (statEl) {
+        statEl.style.display = timelineTriviaTurnTimerSeconds > 0 ? "" : "none";
+    }
+}
+
 // How long the bottom status line stays up. Every client writes every guess
 // outcome here, so it needs to last long enough to read but clear before it
 // goes stale.
@@ -21,7 +34,7 @@ let statusMessageTimeout = null;
 let deferTimerStart = false;
 
 function initTimelineTriviaWebSocket(lobbyId, playerId, turnTimerSeconds) {
-    timelineTriviaTurnTimerSeconds = parseInt(turnTimerSeconds) || 0;
+    setTurnTimerSeconds(turnTimerSeconds);
 
     let wsProtocol = "wss://";
     if (document.location.protocol === "http:") {
@@ -153,7 +166,7 @@ function initTimelineTriviaWebSocket(lobbyId, playerId, turnTimerSeconds) {
 
         // Handle turn timer setting changes (framework lobby setting)
         if (messageText.startsWith("turnTimer:")) {
-            timelineTriviaTurnTimerSeconds = parseInt(messageText.substring("turnTimer:".length)) || 0;
+            setTurnTimerSeconds(messageText.substring("turnTimer:".length));
             restartTurnTimer(lobbyId);
             return;
         }

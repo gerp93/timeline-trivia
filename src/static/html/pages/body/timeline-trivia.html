@@ -44,9 +44,11 @@
                         {{end}}
                     </span>
                 </span>
-                {{if gt .TurnTimerSeconds 0}}
-                <span class="info-stat">Time: <span id="turn-timer" class="gs-timer"></span></span>
-                {{end}}
+                <!-- Always rendered (not gated on the initial setting) so the
+                     element exists in the DOM for doRestartTurnTimer to find
+                     if the timer gets turned on mid-game — display is toggled
+                     by JS from the "turnTimer:" hint instead. -->
+                <span class="info-stat" id="turn-timer-stat" {{if not (gt .TurnTimerSeconds 0)}}style="display: none"{{end}}>Time: <span id="turn-timer" class="gs-timer"></span></span>
             </div>
         </div>
         <div
