@@ -724,6 +724,13 @@
     opacity: 0.9;
 }
 
+/* Message-only stage shown before the 3-2-1 when the turn timer setting
+   itself changes mid-game — no number, just what changed. */
+.timeline-trivia-popup .countdown-announcement {
+    font-size: 0.9em;
+    font-weight: bold;
+}
+
 @keyframes countdownPulse {
     0%, 100% {
         transform: scale(1);

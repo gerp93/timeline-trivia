@@ -124,7 +124,7 @@ function initTimelineTriviaWebSocket(lobbyId, playerId, turnTimerSeconds) {
                 if (next && timelineTriviaTurnTimerSeconds > 0) {
                     // Only once this second popup clears does the board
                     // "reopen" and the real timer start.
-                    showTurnCountdown(next, () => {
+                    showTurnCountdown(next + "'s turn", () => {
                         deferTimerStart = false;
                         doRestartTurnTimer(lobbyId);
                     });
@@ -164,10 +164,38 @@ function initTimelineTriviaWebSocket(lobbyId, playerId, turnTimerSeconds) {
             return;
         }
 
-        // Handle turn timer setting changes (framework lobby setting)
+        // Handle turn timer setting changes (framework lobby setting). Everyone
+        // sees the same announcement + countdown before the clock restarts,
+        // same "no one sees the board change out from under them" rule the
+        // per-turn countdown already follows.
         if (messageText.startsWith("turnTimer:")) {
-            setTurnTimerSeconds(messageText.substring("turnTimer:".length));
-            restartTurnTimer(lobbyId);
+            const newSeconds = parseInt(messageText.substring("turnTimer:".length)) || 0;
+            setTurnTimerSeconds(newSeconds);
+
+            // Nothing to announce or restart if there's no turn in progress
+            // yet (game hasn't started, or just ended) — the value is still
+            // tracked for whenever a turn does start.
+            const hasCurrentGuesser = !!document.querySelector(".player-timeline-row.is-current");
+            if (!hasCurrentGuesser) return;
+
+            const message = newSeconds > 0
+                ? "Turn timer set to " + newSeconds + "s"
+                : "Turn timer turned off";
+
+            deferTimerStart = true;
+            if (typeof gsTimer !== "undefined") gsTimer.stop();
+
+            showTimerChangeAnnouncement(message, () => {
+                if (newSeconds > 0) {
+                    showTurnCountdown("Timer starting...", () => {
+                        deferTimerStart = false;
+                        doRestartTurnTimer(lobbyId);
+                    });
+                } else {
+                    deferTimerStart = false;
+                    doRestartTurnTimer(lobbyId);
+                }
+            });
             return;
         }
 
@@ -282,12 +310,12 @@ function doRestartTurnTimer(lobbyId) {
     });
 }
 
-// showTurnCountdown plays a 3-2-1 countdown naming who's up next, then calls
-// onDone. Shown between the result popup clearing and the real timer
+// showTurnCountdown plays a 3-2-1 countdown under the given label, then
+// calls onDone. Shown between the result popup clearing and the real timer
 // starting, so nobody sees the board "reopen" until the clock is genuinely
 // about to run. Only called when a turn timer is configured — see the
 // "result:" handler, which skips straight to onDone when it's off.
-function showTurnCountdown(nextPlayerName, onDone) {
+function showTurnCountdown(label, onDone) {
     const existing = document.querySelector(".timeline-trivia-popup-backdrop");
     if (existing) existing.remove();
 
@@ -303,7 +331,7 @@ function showTurnCountdown(nextPlayerName, onDone) {
 
     const nameEl = document.createElement("div");
     nameEl.className = "countdown-name";
-    nameEl.textContent = nextPlayerName + "'s turn";
+    nameEl.textContent = label;
     popup.appendChild(nameEl);
 
     backdrop.appendChild(popup);
@@ -331,6 +359,41 @@ function showTurnCountdown(nextPlayerName, onDone) {
     }, 1000);
 
     // Click to skip the countdown, same as the result popup allows.
+    backdrop.addEventListener("click", finish);
+}
+
+// showTimerChangeAnnouncement shows a brief message-only popup (no number),
+// then calls onDone. Used before showTurnCountdown when the turn timer
+// setting itself changes mid-game — see the "turnTimer:" handler — so
+// everyone understands why the clock is about to reset before it does.
+function showTimerChangeAnnouncement(message, onDone) {
+    const existing = document.querySelector(".timeline-trivia-popup-backdrop");
+    if (existing) existing.remove();
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "timeline-trivia-popup-backdrop";
+
+    const popup = document.createElement("div");
+    popup.className = "timeline-trivia-popup turn-countdown";
+
+    const messageEl = document.createElement("div");
+    messageEl.className = "countdown-announcement";
+    messageEl.textContent = message;
+    popup.appendChild(messageEl);
+
+    backdrop.appendChild(popup);
+    document.body.appendChild(backdrop);
+
+    let finished = false;
+    function finish() {
+        if (finished) return;
+        finished = true;
+        clearTimeout(dismissTimer);
+        backdrop.remove();
+        if (typeof onDone === "function") onDone();
+    }
+
+    const dismissTimer = setTimeout(finish, 1400);
     backdrop.addEventListener("click", finish);
 }
 
