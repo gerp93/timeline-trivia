@@ -174,6 +174,17 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 	if err := gsDatabase.SetUserWinGif(players[0].userId, []byte("GIF89a-fake-bytes"), "image/gif"); err != nil {
 		t.Fatalf("set win gif: %v", err)
 	}
+	// Every player gets the same lose celebration so section 2 (wrong guess)
+	// can assert on it regardless of which player the shuffle picks to go
+	// first.
+	for _, p := range players {
+		if err := gsDatabase.SetUserLoseMessage(p.userId, "OOF"); err != nil {
+			t.Fatalf("set lose message: %v", err)
+		}
+		if err := gsDatabase.SetUserLoseGif(p.userId, []byte("GIF89a-fake-lose-bytes"), "image/gif"); err != nil {
+			t.Fatalf("set lose gif: %v", err)
+		}
+	}
 
 	deckId, err := gsDatabase.CreateDeck("e2e deck", "", true)
 	if err != nil {
@@ -366,6 +377,9 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 		}
 		if next, _ := payloads[0]["nextPlayerName"].(string); next == "" {
 			t.Errorf("%s: wrong-guess result had no nextPlayerName", p.name)
+		}
+		if payloads[0]["celebration"] != "OOF" || payloads[0]["hasGif"] != true || payloads[0]["userId"] != guesser.userId.String() {
+			t.Errorf("%s: wrong-guess result missing %s's lose celebration: %v", p.name, guesser.name, payloads[0])
 		}
 		t.Logf("%s bottomMessage: %q", p.name, bm)
 

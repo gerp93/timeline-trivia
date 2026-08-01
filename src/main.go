@@ -46,9 +46,10 @@ func main() {
 	gsDatabase.SetEnvVarPrefix("TIMELINE_TRIVIA")
 	gsApiUser.SetMaxWinGifBytes(1000 * 1024)
 	features := gsBootstrap.Features{
-		Decks:          true,
-		WinCelebration: true,
-		LobbyTurnTimer: true,
+		Decks:           true,
+		WinCelebration:  true,
+		LoseCelebration: true,
+		LobbyTurnTimer:  true,
 	}
 	gsBootstrap.MountFeatures(features)
 

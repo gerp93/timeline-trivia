@@ -468,15 +468,19 @@ function showResultPopup(payload, onDone) {
     messageEl.textContent = payload.playerName + ": " + payload.message;
     popup.appendChild(messageEl);
 
-    const hasCelebration = payload.type === "correct" && (payload.hasGif || payload.celebration);
+    // "incorrect" carries a lose-celebration the same way "correct" carries a
+    // win-celebration; "revealed" never does (no single player to show it to).
+    const isCelebratable = payload.type === "correct" || payload.type === "incorrect";
+    const hasCelebration = isCelebratable && (payload.hasGif || payload.celebration);
     if (payload.hasGif && payload.userId) {
         const gif = document.createElement("img");
         gif.className = "popup-gif";
         gif.alt = "";
-        gif.src = "/api/user/" + encodeURIComponent(payload.userId) + "/win-gif";
+        const gifRoute = payload.type === "correct" ? "win-gif" : "lose-gif";
+        gif.src = "/api/user/" + encodeURIComponent(payload.userId) + "/" + gifRoute;
         popup.appendChild(gif);
     }
-    if (payload.type === "correct" && payload.celebration) {
+    if (isCelebratable && payload.celebration) {
         const celebrationEl = document.createElement("div");
         celebrationEl.className = "popup-celebration-message";
         celebrationEl.textContent = payload.celebration;
@@ -498,7 +502,7 @@ function showResultPopup(payload, onDone) {
     // Auto-remove; "revealed" and celebrations get extra time to read
     let dismissAfter = 2000;
     if (isRevealed) dismissAfter = 5000;
-    if (hasCelebration) dismissAfter = 5000;
+    if (hasCelebration) dismissAfter = 4000;
     const dismissTimer = setTimeout(finish, dismissAfter);
 
     // Also allow click to dismiss

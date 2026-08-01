@@ -122,6 +122,18 @@ func winCelebrationFor(userId uuid.UUID) (celebration string, hasGif bool) {
 	return c.Message.String, c.HasGif
 }
 
+// loseCelebrationFor is winCelebrationFor's counterpart, loaded for the
+// player who just guessed wrong (not the "revealed" case, where every
+// active player missed and there's no single "you" to show it to).
+func loseCelebrationFor(userId uuid.UUID) (celebration string, hasGif bool) {
+	c, err := gsDatabase.GetUserLoseCelebration(userId)
+	if err != nil {
+		log.Println(err)
+		return "", false
+	}
+	return c.Message.String, c.HasGif
+}
+
 // ensureGameExists makes sure a TimelineTrivia game exists for a lobby, creating one if needed
 func ensureGameExists(lobbyId uuid.UUID) (database.TimelineTriviaGame, error) {
 	game, err := database.GetTimelineTriviaGame(lobbyId)
@@ -548,11 +560,15 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		"<red>%s guessed wrong on \"%s\" — %s can steal it.</>",
 		esc(player.Name), esc(guessedCard.CardText), esc(nextName),
 	))
+	loseCelebration, loseHasGif := loseCelebrationFor(userId)
 	sendResult(lobbyId, resultPayload{
 		PlayerName:     player.Name,
 		Type:           "incorrect",
 		Message:        "Wrong! Next player can steal it.",
 		BottomMessage:  fmt.Sprintf("%s guessed wrong on \"%s\" — %s can steal it.", player.Name, guessedCard.CardText, nextName),
+		UserId:         userId.String(),
+		Celebration:    loseCelebration,
+		HasGif:         loseHasGif,
 		NextPlayerName: nextName,
 	})
 	gsWebsocket.LobbyBroadcast(lobbyId, "refresh")
