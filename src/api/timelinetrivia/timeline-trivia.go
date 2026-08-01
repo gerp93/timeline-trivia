@@ -958,11 +958,28 @@ func TimeoutPass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Capture the card and the timer setting in force before the pass
+	// resolves, mirroring PlaceCard's guessedCard snapshot — the round may
+	// end below, and the timer can be changed mid-game, so neither is
+	// reliably recoverable afterwards.
+	timedOutCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
+	timerSeconds, timerErr := gsDatabase.GetLobbyTurnTimerSeconds(lobbyId)
+	if timerErr != nil {
+		log.Println(timerErr)
+	}
+
 	roundExhausted, err := database.RecordTimeoutPass(game.Id, player.Id)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to record timeout"))
 		return
+	}
+
+	// Log the timeout for stats (non-fatal to gameplay on failure).
+	if timedOutCard.CardId != uuid.Nil {
+		if logErr := database.LogTimeout(userId, timedOutCard.CardId, timerSeconds); logErr != nil {
+			log.Println(logErr)
+		}
 	}
 
 	if roundExhausted {

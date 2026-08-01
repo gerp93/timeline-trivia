@@ -14,6 +14,14 @@ import (
 // meaningful and shown in the "most/least successful decade" rankings.
 const MinDecadeGuesses = 10
 
+// decadeExpr buckets a year column into its decade. It truncates toward zero
+// rather than using FLOOR, which matters only for B.C.E. (negative) years:
+// FLOOR(-55/10)*10 is -60, labelling 55 B.C.E as "60s B.C.E" when the 50s
+// B.C.E decade is 50-59 B.C.E — one decade too old, and it merged years from
+// two real decades into one bucket. TRUNCATE gives -50, and is identical to
+// FLOOR for C.E. years. Callers substitute their own column name.
+const decadeExpr = `TRUNCATE(%s / 10, 0) * 10`
+
 // readableDeckPredicate filters to decks the viewer is allowed to read: a
 // public deck, one they've been explicitly granted, or any deck if they're an
 // admin. It assumes DECK is joined as D and CARD as C, and takes the viewer's
@@ -161,7 +169,7 @@ func GetUserStatTotals(viewerId uuid.UUID, targetId uuid.UUID) (StatUser, error)
 func GetUserDecadeStats(viewerId uuid.UUID, targetId uuid.UUID) ([]DecadeStat, error) {
 	sqlString := `
 		SELECT
-			FLOOR(LG.CARD_YEAR / 10) * 10 AS DECADE,
+			` + fmt.Sprintf(decadeExpr, "LG.CARD_YEAR") + ` AS DECADE,
 			COUNT(*) AS ATTEMPTS,
 			COALESCE(SUM(LG.IS_CORRECT), 0) AS CORRECT
 		FROM TIMELINE_TRIVIA_LOG_GUESS AS LG
@@ -222,6 +230,58 @@ func GetUserCategoryStats(viewerId uuid.UUID, targetId uuid.UUID) ([]CategorySta
 			return nil, errors.New("failed to scan row in query results")
 		}
 		result = append(result, c)
+	}
+	return result, nil
+}
+
+// TimeoutStat is how many turns a user lost to the clock at one particular
+// turn-timer setting. A lobby's timer can be changed mid-game, so the same
+// user can have rows at several durations.
+type TimeoutStat struct {
+	TimerSeconds int
+	Count        int
+}
+
+// UserTimeoutStats is a user's record of turns lost to the turn timer: the
+// total, plus the breakdown by how long the timer was set to at the time.
+type UserTimeoutStats struct {
+	Total      int
+	ByDuration []TimeoutStat
+}
+
+// GetUserTimeoutStats returns how often a user ran out of time, broken down by
+// the turn-timer setting in force for each occurrence, over the viewer's
+// readable decks (same scoping as the guess stats it sits beside).
+func GetUserTimeoutStats(viewerId uuid.UUID, targetId uuid.UUID) (UserTimeoutStats, error) {
+	var result UserTimeoutStats
+
+	sqlString := `
+		SELECT
+			LT.TIMER_SECONDS,
+			COUNT(*) AS TIMEOUT_COUNT
+		FROM TIMELINE_TRIVIA_LOG_TIMEOUT AS LT
+			INNER JOIN CARD AS C ON C.ID = LT.CARD_ID
+			INNER JOIN DECK AS D ON D.ID = C.DECK_ID
+		WHERE LT.USER_ID = ?
+			AND ` + readableDeckPredicate + `
+		GROUP BY LT.TIMER_SECONDS
+		ORDER BY LT.TIMER_SECONDS
+	`
+	rows, err := query(sqlString, targetId, viewerId, viewerId)
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+
+	result.ByDuration = make([]TimeoutStat, 0)
+	for rows.Next() {
+		var t TimeoutStat
+		if err := rows.Scan(&t.TimerSeconds, &t.Count); err != nil {
+			log.Println(err)
+			return result, errors.New("failed to scan row in query results")
+		}
+		result.Total += t.Count
+		result.ByDuration = append(result.ByDuration, t)
 	}
 	return result, nil
 }
@@ -289,7 +349,15 @@ func GetLeaderboard() ([]LeaderboardEntry, error) {
 			log.Println(err)
 			return nil, errors.New("failed to scan row in query results")
 		}
+		// Competition ranking: users tied on the sort keys share a rank
+		// rather than being handed arbitrary sequential numbers by row order.
 		e.Rank = len(result) + 1
+		if n := len(result); n > 0 {
+			prev := result[n-1]
+			if prev.GamesWon == e.GamesWon && prev.CorrectGuesses == e.CorrectGuesses {
+				e.Rank = prev.Rank
+			}
+		}
 		result = append(result, e)
 	}
 	return result, nil
@@ -377,7 +445,7 @@ func (t TopDecade) Label() string {
 func GetTopDecades(viewerId uuid.UUID) ([]TopDecade, error) {
 	sqlString := `
 		SELECT
-			FLOOR(C.CARD_YEAR / 10) * 10 AS DECADE,
+			` + fmt.Sprintf(decadeExpr, "C.CARD_YEAR") + ` AS DECADE,
 			COUNT(*) AS DRAW_COUNT
 		FROM TIMELINE_TRIVIA_LOG_CARD AS LC
 			INNER JOIN CARD AS C ON C.ID = LC.CARD_ID

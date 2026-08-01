@@ -96,6 +96,29 @@
 </div>
 {{end}}
 
+<h3>Ran Out of Time</h3>
+{{if eq .Timeouts.Total 0}}
+<p>Never ran out of time.</p>
+{{else}}
+<p>
+    Turns lost to the turn timer: <strong>{{.Timeouts.Total}}</strong>.
+    These are not counted as guesses, so they don't affect accuracy above.
+</p>
+<table>
+    <thead>
+        <tr><th>Timer Setting</th><th>Times Out of Time</th></tr>
+    </thead>
+    <tbody>
+        {{range .Timeouts.ByDuration}}
+        <tr>
+            <td>{{.TimerSeconds}} seconds</td>
+            <td>{{.Count}}</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{end}}
+
 <h3>Categories</h3>
 {{if eq (len .Categories) 0}}
 <p>No categorized guesses recorded yet.</p>

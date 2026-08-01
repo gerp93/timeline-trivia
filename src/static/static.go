@@ -29,6 +29,7 @@ var SQLFiles = []string{
 	"sql/tables/TIMELINE_TRIVIA_LOG_GUESS.sql",
 	"sql/tables/TIMELINE_TRIVIA_LOG_CARD.sql",
 	"sql/tables/TIMELINE_TRIVIA_LOG_WIN.sql",
+	"sql/tables/TIMELINE_TRIVIA_LOG_TIMEOUT.sql",
 
 	// migrations (idempotent ALTERs for databases created before these columns
 	// existed; no-ops on a fresh database). Run after the CREATE TABLEs above

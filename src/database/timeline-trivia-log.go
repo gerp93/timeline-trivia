@@ -47,3 +47,17 @@ func LogWin(userId uuid.UUID) error {
 	sqlString := `INSERT INTO TIMELINE_TRIVIA_LOG_WIN(USER_ID) VALUES (?)`
 	return execute(sqlString, userId)
 }
+
+// LogTimeout records that a user lost their shot at a card because the turn
+// timer ran out. timerSeconds is snapshotted rather than read back from the
+// lobby later: the setting can be changed mid-game, so only the value in
+// force at the moment of the timeout explains it. This is kept separate from
+// LogGuess on purpose — a timeout is not a guess, and folding it in would
+// deflate accuracy for everyone who ever ran out of time.
+func LogTimeout(userId uuid.UUID, cardId uuid.UUID, timerSeconds int) error {
+	sqlString := `
+		INSERT INTO TIMELINE_TRIVIA_LOG_TIMEOUT(USER_ID, CARD_ID, TIMER_SECONDS)
+		VALUES (?, ?, ?)
+	`
+	return execute(sqlString, userId, cardId, timerSeconds)
+}

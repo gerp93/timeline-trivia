@@ -55,8 +55,18 @@ func TestSharedPageTemplatesRender(t *testing.T) {
 		t.Fatalf("create category: %v", err)
 	}
 	year := sql.NullInt64{Int64: 1969, Valid: true}
-	if _, err := database.CreateCard(deckId, "render event", year, uuid.NullUUID{UUID: categoryId, Valid: true}); err != nil {
+	cardId, err := database.CreateCard(deckId, "render event", year, uuid.NullUUID{UUID: categoryId, Valid: true})
+	if err != nil {
 		t.Fatalf("create card: %v", err)
+	}
+
+	// Give the stats page something in every section to render: a guess (so
+	// decades/categories are non-empty) and a timeout at a known setting.
+	if err := database.LogGuess(userId, cardId, 1969, true); err != nil {
+		t.Fatalf("log guess: %v", err)
+	}
+	if err := database.LogTimeout(userId, cardId, 45); err != nil {
+		t.Fatalf("log timeout: %v", err)
 	}
 	if err := gsDatabase.AddUserDeckAccess(userId, deckId); err != nil {
 		t.Fatalf("grant deck access: %v", err)
@@ -90,6 +100,14 @@ func TestSharedPageTemplatesRender(t *testing.T) {
 			"Deck", apiPages.Deck, "/deck/{deckId}", false,
 			func(r *http.Request) { r.SetPathValue("deckId", deckId.String()) },
 			[]string{"render deck", "render event", "1969", "Render Category", "Import Cards"},
+		},
+		{
+			"StatsUser", apiPages.StatsUser, "/stats/user/{userId}", false,
+			func(r *http.Request) { r.SetPathValue("userId", userId.String()) },
+			[]string{
+				"render_admin", "Decades Guessed Most Often", "1960s",
+				"Ran Out of Time", "45 seconds", "Render Category",
+			},
 		},
 	}
 

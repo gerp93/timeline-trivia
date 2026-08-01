@@ -180,6 +180,13 @@ func StatsUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	timeouts, err := database.GetUserTimeoutStats(viewerId, targetId)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get timeout stats"))
+		return
+	}
+
 	// Rank decades three ways. "Most often" uses every decade; "most/least
 	// successful" only decades past the significance floor so a lucky handful
 	// of guesses can't top the list.
@@ -195,19 +202,7 @@ func StatsUser(w http.ResponseWriter, r *http.Request) {
 			qualified = append(qualified, d)
 		}
 	}
-	successfulListSize := successfulSplitSize(len(qualified))
-
-	mostSuccessful := append([]database.DecadeStat(nil), qualified...)
-	sort.SliceStable(mostSuccessful, func(i, j int) bool {
-		return mostSuccessful[i].Rate() > mostSuccessful[j].Rate()
-	})
-	mostSuccessful = topDecades(mostSuccessful, successfulListSize)
-
-	leastSuccessful := append([]database.DecadeStat(nil), qualified...)
-	sort.SliceStable(leastSuccessful, func(i, j int) bool {
-		return leastSuccessful[i].Rate() < leastSuccessful[j].Rate()
-	})
-	leastSuccessful = topDecades(leastSuccessful, successfulListSize)
+	mostSuccessful, leastSuccessful := splitSuccessfulDecades(qualified)
 
 	// Categories ranked by success rate.
 	categoriesRanked := append([]database.CategoryStat(nil), categories...)
@@ -230,6 +225,7 @@ func StatsUser(w http.ResponseWriter, r *http.Request) {
 		MostSuccessful   []database.DecadeStat
 		LeastSuccessful  []database.DecadeStat
 		Categories       []database.CategoryStat
+		Timeouts         database.UserTimeoutStats
 		HasQualified     bool
 	}
 
@@ -241,7 +237,8 @@ func StatsUser(w http.ResponseWriter, r *http.Request) {
 		MostSuccessful:   mostSuccessful,
 		LeastSuccessful:  leastSuccessful,
 		Categories:       categoriesRanked,
-		HasQualified:     successfulListSize > 0,
+		Timeouts:         timeouts,
+		HasQualified:     len(mostSuccessful) > 0,
 	})
 }
 
@@ -251,6 +248,32 @@ func topDecades(decades []database.DecadeStat, n int) []database.DecadeStat {
 		return decades[:n]
 	}
 	return decades
+}
+
+// splitSuccessfulDecades ranks the qualified decades by accuracy and returns
+// the best and worst ends of that ranking, best-first and worst-first
+// respectively.
+//
+// Both lists come from ONE descending ranking, taking opposite ends, so they
+// are disjoint by construction. Ranking twice (once each way) and capping
+// each by count is NOT enough: with tied rates a stable sort leaves the same
+// decade first in both directions, so it showed up as both most and least
+// successful. Real data hit this — four qualified decades at 83/80/80/70%
+// put the first 80% decade at the top of both lists.
+func splitSuccessfulDecades(qualified []database.DecadeStat) (most, least []database.DecadeStat) {
+	ranked := append([]database.DecadeStat(nil), qualified...)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return ranked[i].Rate() > ranked[j].Rate()
+	})
+
+	n := successfulSplitSize(len(ranked))
+
+	most = ranked[:n]
+	least = make([]database.DecadeStat, 0, n)
+	for i := len(ranked) - 1; i >= len(ranked)-n; i-- {
+		least = append(least, ranked[i])
+	}
+	return most, least
 }
 
 // successfulSplitSize returns how many decades each of "most successful" and

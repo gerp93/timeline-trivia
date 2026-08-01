@@ -437,10 +437,35 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 	// ================= 3. timeout pass, no penalty ==========================
 	timedOut := currentPlayer()
 	preTimeline, _ := database.GetPlayerTimeline(gameId, timedOut.playerId)
+	preGuesses, _ := database.GetUserStatTotals(timedOut.userId, timedOut.userId)
+	preTimeouts, _ := database.GetUserTimeoutStats(timedOut.userId, timedOut.userId)
 	rec = serve(apiTimelineTrivia.TimeoutPass, authedRequest(t, "POST",
 		"/api/timeline-trivia/"+lobbyId.String()+"/timeout", url.Values{}, timedOut.userId))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("timeout: %d %s", rec.Code, rec.Body.String())
+	}
+	// The timeout is logged for stats, at the timer setting in force (30s,
+	// set during lobby setup above)...
+	postTimeouts, err := database.GetUserTimeoutStats(timedOut.userId, timedOut.userId)
+	if err != nil {
+		t.Fatalf("timeout stats: %v", err)
+	}
+	if postTimeouts.Total != preTimeouts.Total+1 {
+		t.Errorf("timeout not logged: total %d -> %d", preTimeouts.Total, postTimeouts.Total)
+	}
+	foundDuration := false
+	for _, d := range postTimeouts.ByDuration {
+		if d.TimerSeconds == 30 {
+			foundDuration = true
+		}
+	}
+	if !foundDuration {
+		t.Errorf("timeout not logged against the 30s timer setting: %+v", postTimeouts.ByDuration)
+	}
+	// ...but must NOT be counted as a guess, or it would deflate accuracy.
+	postGuesses, _ := database.GetUserStatTotals(timedOut.userId, timedOut.userId)
+	if postGuesses.TotalGuesses != preGuesses.TotalGuesses {
+		t.Errorf("timeout was counted as a guess: %d -> %d", preGuesses.TotalGuesses, postGuesses.TotalGuesses)
 	}
 	postTimeline, _ := database.GetPlayerTimeline(gameId, timedOut.playerId)
 	if len(preTimeline) != len(postTimeline) {
