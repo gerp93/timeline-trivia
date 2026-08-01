@@ -195,17 +195,19 @@ func StatsUser(w http.ResponseWriter, r *http.Request) {
 			qualified = append(qualified, d)
 		}
 	}
+	successfulListSize := successfulSplitSize(len(qualified))
+
 	mostSuccessful := append([]database.DecadeStat(nil), qualified...)
 	sort.SliceStable(mostSuccessful, func(i, j int) bool {
 		return mostSuccessful[i].Rate() > mostSuccessful[j].Rate()
 	})
-	mostSuccessful = topDecades(mostSuccessful, 5)
+	mostSuccessful = topDecades(mostSuccessful, successfulListSize)
 
 	leastSuccessful := append([]database.DecadeStat(nil), qualified...)
 	sort.SliceStable(leastSuccessful, func(i, j int) bool {
 		return leastSuccessful[i].Rate() < leastSuccessful[j].Rate()
 	})
-	leastSuccessful = topDecades(leastSuccessful, 5)
+	leastSuccessful = topDecades(leastSuccessful, successfulListSize)
 
 	// Categories ranked by success rate.
 	categoriesRanked := append([]database.CategoryStat(nil), categories...)
@@ -239,7 +241,7 @@ func StatsUser(w http.ResponseWriter, r *http.Request) {
 		MostSuccessful:   mostSuccessful,
 		LeastSuccessful:  leastSuccessful,
 		Categories:       categoriesRanked,
-		HasQualified:     len(qualified) > 0,
+		HasQualified:     successfulListSize > 0,
 	})
 }
 
@@ -249,6 +251,20 @@ func topDecades(decades []database.DecadeStat, n int) []database.DecadeStat {
 		return decades[:n]
 	}
 	return decades
+}
+
+// successfulSplitSize returns how many decades each of "most successful" and
+// "least successful" should show. Capped at half of qualifiedCount so the
+// two lists can never share a decade — a flat cap of 5 would, with fewer
+// than 10 qualified decades, put the same decades in both lists (just
+// reordered), which reads as a broken/duplicated page rather than as "not
+// enough data yet". Also capped at 5 so the lists don't grow unbounded.
+func successfulSplitSize(qualifiedCount int) int {
+	n := qualifiedCount / 2
+	if n > 5 {
+		n = 5
+	}
+	return n
 }
 
 // StatsCards is the card picker for per-card stats, scoped to readable decks.
