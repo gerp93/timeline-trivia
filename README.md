@@ -8,6 +8,13 @@ history-trivia game where players place event cards into a chronological
 timeline instead of judging prompt/response cards. Credit and thanks to the
 original project for the platform this was built on.
 
+## Standards
+
+This repo is a [gerp93/KVG_Standards](https://github.com/gerp93/KVG_Standards)
+consumer — theming, licensing, CI, and repo conventions follow that shared
+standard rather than being defined locally here. See that repo (and this
+one's entry in its `REPO_SCOPE.md`) for the full rules.
+
 ## Deployment
 
 Deployment is managed by [gameshell-deploy](https://github.com/gerp93/gameshell-deploy).
