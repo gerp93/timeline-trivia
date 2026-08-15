@@ -81,9 +81,6 @@ type TimelineTriviaTimelineCard struct {
 	CategoryName sql.NullString
 	Position     int
 	PlacedOnDate time.Time
-	// IsLastPlaced marks the single most recently won card in the whole game,
-	// so the board can highlight it wherever it landed.
-	IsLastPlaced bool
 }
 
 // TimelineTriviaCurrentCard represents the current card being played
@@ -559,34 +556,6 @@ func GetTimelineTriviaGameDecks(gameId uuid.UUID) ([]TimelineTriviaDeckInfo, err
 	return result, nil
 }
 
-// GetLastPlacedCardId returns the card most recently won by anyone in this
-// game, or uuid.Nil when nothing has been placed yet.
-func GetLastPlacedCardId(gameId uuid.UUID) (uuid.UUID, error) {
-	var cardId uuid.UUID
-
-	sqlString := `
-		SELECT CARD_ID
-		FROM TIMELINE_TRIVIA_PLAYER_TIMELINE
-		WHERE TIMELINE_TRIVIA_GAME_ID = ?
-		ORDER BY PLACED_ON_DATE DESC, ID DESC
-		LIMIT 1
-	`
-	rows, err := query(sqlString, gameId)
-	if err != nil {
-		return cardId, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		if err := rows.Scan(&cardId); err != nil {
-			log.Println(err)
-			return cardId, errors.New("failed to scan row in query results")
-		}
-	}
-
-	return cardId, nil
-}
-
 // GetPlayerTimeline gets all cards in a player's timeline for a game
 func GetPlayerTimeline(gameId uuid.UUID, playerId uuid.UUID) ([]TimelineTriviaTimelineCard, error) {
 	sqlString := `
@@ -649,11 +618,6 @@ func GetAllPlayerTimelines(gameId uuid.UUID, currentPlayerId uuid.UUID, viewingP
 		attemptByPlayer[a.PlayerId] = a.Position
 	}
 
-	lastPlacedCardId, err := GetLastPlacedCardId(gameId)
-	if err != nil {
-		lastPlacedCardId = uuid.Nil
-	}
-
 	result := make([]TimelineTriviaPlayerTimeline, 0, len(players))
 	for _, p := range players {
 		if !p.IsActive {
@@ -662,9 +626,6 @@ func GetAllPlayerTimelines(gameId uuid.UUID, currentPlayerId uuid.UUID, viewingP
 		timeline, err := GetPlayerTimeline(gameId, p.PlayerId)
 		if err != nil {
 			timeline = []TimelineTriviaTimelineCard{}
-		}
-		for i := range timeline {
-			timeline[i].IsLastPlaced = lastPlacedCardId != uuid.Nil && timeline[i].CardId == lastPlacedCardId
 		}
 		position, hasAttempt := attemptByPlayer[p.PlayerId]
 		result = append(result, TimelineTriviaPlayerTimeline{

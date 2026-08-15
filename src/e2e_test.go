@@ -595,20 +595,6 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 		t.Errorf("every client should have received Alice's win celebration on the payload")
 	}
 
-	// ================= 6. last-placed highlight, exactly one ================
-	all, _ = database.GetAllPlayerTimelines(gameId, currentPlayer().playerId, alice.playerId)
-	highlighted := 0
-	for _, row := range all {
-		for _, c := range row.Timeline {
-			if c.IsLastPlaced {
-				highlighted++
-			}
-		}
-	}
-	if highlighted != 1 {
-		t.Errorf("expected exactly 1 last-placed card highlighted, got %d", highlighted)
-	}
-
 	// ================= 7. skip & remove -> purgatory ========================
 	skipper := currentPlayer()
 	badCard, _ := database.GetTimelineTriviaCurrentCard(gameId)

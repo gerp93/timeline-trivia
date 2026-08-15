@@ -33,6 +33,29 @@ let statusMessageTimeout = null;
 // covers the board.
 let deferTimerStart = false;
 
+// The showResultPopup/showTurnCountdown/showTimerChangeAnnouncement trio all
+// share one backdrop on screen at a time, and each used to just yank the
+// previous popup's DOM node out from under it (`existing.remove()`) when a
+// new one started. That left the outgoing popup's own setTimeout/setInterval
+// running invisibly in the background — no longer visible, but still due to
+// fire its onDone later. A stale onDone could flip deferTimerStart back to
+// false (or replay a 3-2-1 countdown) out of step with whatever sequence was
+// actually on screen, cutting the real per-turn timer short a few seconds
+// after it had just (re)started. dismissActivePopup lets each show* function
+// properly cancel its predecessor — clearing its timer and skipping its
+// onDone — instead of leaving it to fire late.
+let dismissActivePopup = null;
+
+function dismissAnyActivePopup() {
+    if (dismissActivePopup) {
+        const dismiss = dismissActivePopup;
+        dismissActivePopup = null;
+        // false = don't fire the outgoing popup's onDone; the caller is
+        // about to start its own sequence and owns what happens next.
+        dismiss(false);
+    }
+}
+
 function initTimelineTriviaWebSocket(lobbyId, playerId, turnTimerSeconds) {
     setTurnTimerSeconds(turnTimerSeconds);
 
@@ -316,8 +339,7 @@ function doRestartTurnTimer(lobbyId) {
 // about to run. Only called when a turn timer is configured — see the
 // "result:" handler, which skips straight to onDone when it's off.
 function showTurnCountdown(label, onDone) {
-    const existing = document.querySelector(".timeline-trivia-popup-backdrop");
-    if (existing) existing.remove();
+    dismissAnyActivePopup();
 
     const backdrop = document.createElement("div");
     backdrop.className = "timeline-trivia-popup-backdrop";
@@ -341,13 +363,15 @@ function showTurnCountdown(label, onDone) {
     let count = 3;
     numberEl.textContent = count;
 
-    function finish() {
+    function finish(callOnDone) {
         if (finished) return;
         finished = true;
         clearInterval(interval);
         backdrop.remove();
-        if (typeof onDone === "function") onDone();
+        if (dismissActivePopup === finish) dismissActivePopup = null;
+        if (callOnDone !== false && typeof onDone === "function") onDone();
     }
+    dismissActivePopup = finish;
 
     const interval = setInterval(() => {
         count -= 1;
@@ -359,7 +383,7 @@ function showTurnCountdown(label, onDone) {
     }, 1000);
 
     // Click to skip the countdown, same as the result popup allows.
-    backdrop.addEventListener("click", finish);
+    backdrop.addEventListener("click", () => finish());
 }
 
 // showTimerChangeAnnouncement shows a brief message-only popup (no number),
@@ -367,8 +391,7 @@ function showTurnCountdown(label, onDone) {
 // setting itself changes mid-game — see the "turnTimer:" handler — so
 // everyone understands why the clock is about to reset before it does.
 function showTimerChangeAnnouncement(message, onDone) {
-    const existing = document.querySelector(".timeline-trivia-popup-backdrop");
-    if (existing) existing.remove();
+    dismissAnyActivePopup();
 
     const backdrop = document.createElement("div");
     backdrop.className = "timeline-trivia-popup-backdrop";
@@ -385,16 +408,18 @@ function showTimerChangeAnnouncement(message, onDone) {
     document.body.appendChild(backdrop);
 
     let finished = false;
-    function finish() {
+    function finish(callOnDone) {
         if (finished) return;
         finished = true;
         clearTimeout(dismissTimer);
         backdrop.remove();
-        if (typeof onDone === "function") onDone();
+        if (dismissActivePopup === finish) dismissActivePopup = null;
+        if (callOnDone !== false && typeof onDone === "function") onDone();
     }
+    dismissActivePopup = finish;
 
     const dismissTimer = setTimeout(finish, 1400);
-    backdrop.addEventListener("click", finish);
+    backdrop.addEventListener("click", () => finish());
 }
 
 function addChatMessage(message) {
@@ -434,9 +459,10 @@ function showAlert(message) {
 // account page. onDone fires exactly once, whether the popup auto-dismisses
 // or is clicked away.
 function showResultPopup(payload, onDone) {
-    // Remove any existing popup
-    const existing = document.querySelector(".timeline-trivia-popup-backdrop");
-    if (existing) existing.remove();
+    // Cancel any existing popup — clears its pending timer too, not just its
+    // DOM node, so its onDone can't fire late and out of step (see
+    // dismissActivePopup above).
+    dismissAnyActivePopup();
 
     // Create backdrop
     const backdrop = document.createElement("div");
@@ -491,13 +517,15 @@ function showResultPopup(payload, onDone) {
     document.body.appendChild(backdrop);
 
     let finished = false;
-    function finish() {
+    function finish(callOnDone) {
         if (finished) return;
         finished = true;
         clearTimeout(dismissTimer);
         backdrop.remove();
-        if (typeof onDone === "function") onDone();
+        if (dismissActivePopup === finish) dismissActivePopup = null;
+        if (callOnDone !== false && typeof onDone === "function") onDone();
     }
+    dismissActivePopup = finish;
 
     // Auto-remove; "revealed" and celebrations get extra time to read
     let dismissAfter = 2000;
@@ -506,5 +534,5 @@ function showResultPopup(payload, onDone) {
     const dismissTimer = setTimeout(finish, dismissAfter);
 
     // Also allow click to dismiss
-    backdrop.addEventListener("click", finish);
+    backdrop.addEventListener("click", () => finish());
 }

@@ -41,7 +41,7 @@
                 <div class="card-event-text">Guessed here</div>
             </div>
             {{end}}
-            <div class="timeline-card-box{{if $card.IsLastPlaced}} last-placed{{end}}"{{if $card.IsLastPlaced}} title="Most recently won card"{{end}}>
+            <div class="timeline-card-box">
                 <div class="card-year-badge{{if lt $card.CardYear 0}} bce{{end}}">{{formatYear $card.CardYear}}</div>
                 {{if $card.CategoryName.Valid}}
                 <div class="card-category-badge">{{$card.CategoryName.String}}</div>
