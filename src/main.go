@@ -18,6 +18,7 @@ import (
 	apiCard "github.com/gerp93/timeline-trivia/api/card"
 	apiCategory "github.com/gerp93/timeline-trivia/api/category"
 	apiPages "github.com/gerp93/timeline-trivia/api/pages"
+	apiTimeline "github.com/gerp93/timeline-trivia/api/timeline"
 	apiTimelineTrivia "github.com/gerp93/timeline-trivia/api/timelinetrivia"
 	"github.com/gerp93/timeline-trivia/database"
 	"github.com/gerp93/timeline-trivia/game"
@@ -35,13 +36,13 @@ func main() {
 	gsApi.SetBrandName("Timeline Trivia")
 	gsAuth.SetCookiePrefix("CARD-TIMELINE")
 	gsApi.SetPagePolicy(gsApi.PagePolicy{
-		LoginPaths: []string{"/account", "/users", "/categories", "/flagged-cards", "/stats"},
+		LoginPaths: []string{"/account", "/users", "/flagged-cards", "/stats", "/timelines"},
 		LoginPathPrefixes: []string{
 			"/deck",
 			"/timeline-trivia",
 			"/stats",
 		},
-		AdminPaths: []string{"/users", "/categories", "/flagged-cards"},
+		AdminPaths: []string{"/users", "/flagged-cards", "/timelines"},
 	})
 	gsDatabase.SetEnvVarPrefix("TIMELINE_TRIVIA")
 	gsApiUser.SetMaxWinGifBytes(1000 * 1024)
@@ -67,6 +68,10 @@ func main() {
 	// then any pre-category cards in the default deck get backfilled by text.
 	defaultDeckJSON, err := static.StaticFiles.ReadFile("data/default-deck.json")
 	if err != nil {
+		log.Fatalln(err)
+		return
+	}
+	if err := database.SeedDefaultTimelineIfEmpty(); err != nil {
 		log.Fatalln(err)
 		return
 	}
@@ -96,7 +101,7 @@ func main() {
 	// a real 404. "{$}" restricts the match to the literal root only.
 	http.Handle("GET /{$}", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Home)))
 	http.Handle("GET /about", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.About)))
-	http.Handle("GET /categories", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Categories)))
+	http.Handle("GET /timelines", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Timelines)))
 	http.Handle("GET /flagged-cards", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.FlaggedCards)))
 	http.Handle("GET /deck/{deckId}", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Deck)))
 
@@ -120,15 +125,28 @@ func main() {
 	http.Handle("PUT /api/card/{cardId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Update)))
 	http.Handle("DELETE /api/card/{cardId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Delete)))
 
+	// deck timeline assignment (game-owned; deck-access-gated, checked in-handler)
+	http.Handle("PUT /api/deck/{deckId}/timeline", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimeline.SetDeckTimeline)))
+
+	// timeline/era admin management (admin-only, checked in-handler).
+	// Delete-with-reassign is a POST (not DELETE) because it carries a form
+	// body, same rationale as category delete.
+	http.Handle("POST /api/timeline/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimeline.Create)))
+	http.Handle("POST /api/timeline/{timelineId}/delete", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimeline.DeleteReassign)))
+	http.Handle("POST /api/timeline/{timelineId}/era/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimeline.CreateEra)))
+	http.Handle("DELETE /api/era/{eraId}", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiTimeline.DeleteEra)))
+	http.Handle("POST /api/timeline/{timelineId}/category/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCategory.Create)))
+
 	// flagged-card review (admin-only, checked in-handler). Accept is a POST
 	// rather than DELETE because it removes the flag, not the card.
 	http.Handle("POST /api/card/{cardId}/unflag", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.Unflag)))
 	http.Handle("PUT /api/card/{cardId}/flagged", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCard.UpdateFlagged)))
 
-	// category (game-owned; admin-managed predefined list, checked in-handler).
-	// Delete-with-reassign is a POST (not DELETE) because it carries a form
-	// body — Go's ParseForm only reads the body for POST/PUT/PATCH.
-	http.Handle("POST /api/category/create", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCategory.Create)))
+	// category (game-owned; admin-managed per-timeline list, checked
+	// in-handler; create is under /api/timeline/{timelineId}/category/create
+	// next to era create). Delete-with-reassign is a POST (not DELETE)
+	// because it carries a form body — Go's ParseForm only reads the body
+	// for POST/PUT/PATCH.
 	http.Handle("POST /api/category/{categoryId}/delete", gsApi.MiddlewareForAPIs(http.HandlerFunc(apiCategory.DeleteReassign)))
 
 	// timeline-trivia

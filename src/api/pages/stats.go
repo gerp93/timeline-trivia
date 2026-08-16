@@ -1,6 +1,7 @@
 package apiPages
 
 import (
+	"html/template"
 	"net/http"
 	"sort"
 	"strconv"
@@ -12,20 +13,56 @@ import (
 	"github.com/gerp93/timeline-trivia/database"
 )
 
-// Stats is the statistics hub: global top decades plus links into the other
-// stats views.
+// parseUUIDQueryParam parses a query-string UUID, returning uuid.Nil for an
+// empty or malformed value rather than erroring — every stats page treats
+// uuid.Nil as "no filter" (Overall/whole-timeline), so a missing or garbled
+// param degrades to that instead of failing the request.
+func parseUUIDQueryParam(value string) uuid.UUID {
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return uuid.Nil
+	}
+	return id
+}
+
+// timelineFuncMap is shared by the stats pages that render a timeline (and,
+// on stats-user.html, era) selector — "isNilUUID" flags the "Overall"/
+// "whole timeline" option as selected, which text/template's built-in `not`
+// can't do for a fixed-size array type like uuid.UUID (its zero value has
+// the same length as any other, so `not` always sees it as non-empty).
+var timelineFuncMap = template.FuncMap{
+	"isNilUUID": func(id uuid.UUID) bool { return id == uuid.Nil },
+}
+
+// Stats is the statistics hub: top decades (or, with a timeline selected,
+// top eras) plus links into the other stats views.
 func Stats(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Timeline Trivia - Statistics"
 
-	topDecades, err := database.GetTopDecades(basePageData.User.Id)
+	timelineId := parseUUIDQueryParam(r.URL.Query().Get("timeline"))
+
+	timelines, err := database.GetTimelines()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get timelines"))
+		return
+	}
+
+	var topDecadesResult []database.TopDecade
+	var topErasResult []database.TopEra
+	if timelineId == uuid.Nil {
+		topDecadesResult, err = database.GetTopDecades(basePageData.User.Id)
+	} else {
+		topErasResult, err = database.GetTopErasForTimeline(basePageData.User.Id, timelineId)
+	}
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to get top decades"))
 		return
 	}
 
-	tmpl, err := parseChrome("html/pages/body/stats.html", nil)
+	tmpl, err := parseChrome("html/pages/body/stats.html", timelineFuncMap)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to parse HTML"))
@@ -34,30 +71,46 @@ func Stats(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		SelfUserId uuid.UUID
-		TopDecades []database.TopDecade
+		SelfUserId       uuid.UUID
+		Timelines        []database.Timeline
+		SelectedTimeline uuid.UUID
+		TopDecades       []database.TopDecade
+		TopEras          []database.TopEra
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		SelfUserId:   basePageData.User.Id,
-		TopDecades:   topDecades,
+		BasePageData:     basePageData,
+		SelfUserId:       basePageData.User.Id,
+		Timelines:        timelines,
+		SelectedTimeline: timelineId,
+		TopDecades:       topDecadesResult,
+		TopEras:          topErasResult,
 	})
 }
 
-// StatsLeaderboard shows the cross-user leaderboard (public decks only).
+// StatsLeaderboard shows the cross-user leaderboard (public decks only),
+// optionally scoped to one timeline.
 func StatsLeaderboard(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Timeline Trivia - Statistics - Leaderboard"
 
-	entries, err := database.GetLeaderboard()
+	timelineId := parseUUIDQueryParam(r.URL.Query().Get("timeline"))
+
+	timelines, err := database.GetTimelines()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get timelines"))
+		return
+	}
+
+	entries, err := database.GetLeaderboard(timelineId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to get leaderboard"))
 		return
 	}
 
-	tmpl, err := parseChrome("html/pages/body/stats-leaderboard.html", nil)
+	tmpl, err := parseChrome("html/pages/body/stats-leaderboard.html", timelineFuncMap)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to parse HTML"))
@@ -66,12 +119,16 @@ func StatsLeaderboard(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		Entries []database.LeaderboardEntry
+		Timelines        []database.Timeline
+		SelectedTimeline uuid.UUID
+		Entries          []database.LeaderboardEntry
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		Entries:      entries,
+		BasePageData:     basePageData,
+		Timelines:        timelines,
+		SelectedTimeline: timelineId,
+		Entries:          entries,
 	})
 }
 
@@ -138,9 +195,12 @@ func StatsUsers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// StatsUser shows one user's detailed stats: overall totals, decade rankings
-// (most often, most/least successful past the significance floor), and
-// per-category success. Everything is scoped to the viewer's readable decks.
+// StatsUser shows one user's detailed stats: overall totals, decade/era
+// rankings (most often, most/least successful past the significance
+// floor), and per-category success. Everything is scoped to the viewer's
+// readable decks, and optionally to one timeline (in which case the decade
+// breakdown is replaced by an era breakdown for that timeline) and, within
+// a timeline, further to one era.
 func StatsUser(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
 	basePageData.PageTitle = "Timeline Trivia - Statistics - User"
@@ -152,7 +212,33 @@ func StatsUser(w http.ResponseWriter, r *http.Request) {
 	}
 	viewerId := basePageData.User.Id
 
-	totals, err := database.GetUserStatTotals(viewerId, targetId)
+	params := r.URL.Query()
+	timelineId := parseUUIDQueryParam(params.Get("timeline"))
+	eraId := parseUUIDQueryParam(params.Get("era"))
+	// An era filter only makes sense alongside its own timeline; a stale or
+	// manually-edited era param with no timeline selected is ignored.
+	if timelineId == uuid.Nil {
+		eraId = uuid.Nil
+	}
+
+	timelines, err := database.GetTimelines()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get timelines"))
+		return
+	}
+
+	var eras []database.Era
+	if timelineId != uuid.Nil {
+		eras, err = database.GetErasForTimeline(timelineId)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("failed to get eras"))
+			return
+		}
+	}
+
+	totals, err := database.GetUserStatTotals(viewerId, targetId, timelineId, eraId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to get user stats"))
@@ -166,43 +252,19 @@ func StatsUser(w http.ResponseWriter, r *http.Request) {
 	}
 	totals.Name = targetUser.Name
 
-	decades, err := database.GetUserDecadeStats(viewerId, targetId)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to get decade stats"))
-		return
-	}
-
-	categories, err := database.GetUserCategoryStats(viewerId, targetId)
+	categories, err := database.GetUserCategoryStats(viewerId, targetId, timelineId, eraId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to get category stats"))
 		return
 	}
 
-	timeouts, err := database.GetUserTimeoutStats(viewerId, targetId)
+	timeouts, err := database.GetUserTimeoutStats(viewerId, targetId, timelineId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to get timeout stats"))
 		return
 	}
-
-	// Rank decades three ways. "Most often" uses every decade; "most/least
-	// successful" only decades past the significance floor so a lucky handful
-	// of guesses can't top the list.
-	mostOften := append([]database.DecadeStat(nil), decades...)
-	sort.SliceStable(mostOften, func(i, j int) bool {
-		return mostOften[i].Attempts > mostOften[j].Attempts
-	})
-	mostOften = topDecades(mostOften, 5)
-
-	qualified := make([]database.DecadeStat, 0, len(decades))
-	for _, d := range decades {
-		if d.Qualified() {
-			qualified = append(qualified, d)
-		}
-	}
-	mostSuccessful, leastSuccessful := splitSuccessfulDecades(qualified)
 
 	// Categories ranked by success rate.
 	categoriesRanked := append([]database.CategoryStat(nil), categories...)
@@ -210,7 +272,7 @@ func StatsUser(w http.ResponseWriter, r *http.Request) {
 		return categoriesRanked[i].Rate() > categoriesRanked[j].Rate()
 	})
 
-	tmpl, err := parseChrome("html/pages/body/stats-user.html", nil)
+	tmpl, err := parseChrome("html/pages/body/stats-user.html", timelineFuncMap)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to parse HTML"))
@@ -219,27 +281,89 @@ func StatsUser(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		Stat             database.StatUser
-		MinDecadeGuesses int
-		MostOften        []database.DecadeStat
-		MostSuccessful   []database.DecadeStat
-		LeastSuccessful  []database.DecadeStat
-		Categories       []database.CategoryStat
-		Timeouts         database.UserTimeoutStats
-		HasQualified     bool
+		Stat               database.StatUser
+		MinBucketGuesses   int
+		Timelines          []database.Timeline
+		SelectedTimeline   uuid.UUID
+		Eras               []database.Era
+		SelectedEra        uuid.UUID
+		MostOften          []database.DecadeStat
+		MostSuccessful     []database.DecadeStat
+		LeastSuccessful    []database.DecadeStat
+		HasQualified       bool
+		EraMostOften       []database.EraStat
+		EraMostSuccessful  []database.EraStat
+		EraLeastSuccessful []database.EraStat
+		HasEraQualified    bool
+		Categories         []database.CategoryStat
+		Timeouts           database.UserTimeoutStats
 	}
 
-	_ = tmpl.ExecuteTemplate(w, "base", data{
+	d := data{
 		BasePageData:     basePageData,
 		Stat:             totals,
-		MinDecadeGuesses: database.MinDecadeGuesses,
-		MostOften:        mostOften,
-		MostSuccessful:   mostSuccessful,
-		LeastSuccessful:  leastSuccessful,
+		MinBucketGuesses: database.MinBucketGuesses,
+		Timelines:        timelines,
+		SelectedTimeline: timelineId,
+		Eras:             eras,
+		SelectedEra:      eraId,
 		Categories:       categoriesRanked,
 		Timeouts:         timeouts,
-		HasQualified:     len(mostSuccessful) > 0,
-	})
+	}
+
+	if timelineId == uuid.Nil {
+		// "Overall": rank decades three ways, same as before this feature.
+		// "Most often" uses every decade; "most/least successful" only
+		// decades past the significance floor so a lucky handful of
+		// guesses can't top the list.
+		decades, err := database.GetUserDecadeStats(viewerId, targetId)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("failed to get decade stats"))
+			return
+		}
+
+		mostOften := append([]database.DecadeStat(nil), decades...)
+		sort.SliceStable(mostOften, func(i, j int) bool {
+			return mostOften[i].Attempts > mostOften[j].Attempts
+		})
+		d.MostOften = topDecades(mostOften, 5)
+
+		qualified := make([]database.DecadeStat, 0, len(decades))
+		for _, dd := range decades {
+			if dd.Qualified() {
+				qualified = append(qualified, dd)
+			}
+		}
+		d.MostSuccessful, d.LeastSuccessful = splitSuccessfulDecades(qualified)
+		d.HasQualified = len(d.MostSuccessful) > 0
+	} else {
+		// One timeline selected: same three-way ranking, but bucketed by
+		// that timeline's own eras instead of decades.
+		eraStats, err := database.GetUserEraStats(viewerId, targetId, timelineId)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("failed to get era stats"))
+			return
+		}
+
+		mostOften := append([]database.EraStat(nil), eraStats...)
+		sort.SliceStable(mostOften, func(i, j int) bool {
+			return mostOften[i].Attempts > mostOften[j].Attempts
+		})
+		d.EraMostOften = topEras(mostOften, 5)
+
+		qualified := make([]database.EraStat, 0, len(eraStats))
+		for _, e := range eraStats {
+			if e.Qualified() {
+				qualified = append(qualified, e)
+			}
+		}
+		d.EraMostSuccessful, d.EraLeastSuccessful = splitSuccessfulEras(qualified)
+		d.HasEraQualified = len(d.EraMostSuccessful) > 0
+	}
+
+	_ = tmpl.ExecuteTemplate(w, "base", d)
 }
 
 // topDecades returns at most n entries from the front of the slice.
@@ -248,6 +372,14 @@ func topDecades(decades []database.DecadeStat, n int) []database.DecadeStat {
 		return decades[:n]
 	}
 	return decades
+}
+
+// topEras is topDecades's era counterpart.
+func topEras(eras []database.EraStat, n int) []database.EraStat {
+	if len(eras) > n {
+		return eras[:n]
+	}
+	return eras
 }
 
 // splitSuccessfulDecades ranks the qualified decades by accuracy and returns
@@ -276,12 +408,31 @@ func splitSuccessfulDecades(qualified []database.DecadeStat) (most, least []data
 	return most, least
 }
 
-// successfulSplitSize returns how many decades each of "most successful" and
-// "least successful" should show. Capped at half of qualifiedCount so the
-// two lists can never share a decade — a flat cap of 5 would, with fewer
-// than 10 qualified decades, put the same decades in both lists (just
-// reordered), which reads as a broken/duplicated page rather than as "not
-// enough data yet". Also capped at 5 so the lists don't grow unbounded.
+// splitSuccessfulEras is splitSuccessfulDecades's era counterpart — same
+// tie-breaking rationale applies.
+func splitSuccessfulEras(qualified []database.EraStat) (most, least []database.EraStat) {
+	ranked := append([]database.EraStat(nil), qualified...)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return ranked[i].Rate() > ranked[j].Rate()
+	})
+
+	n := successfulSplitSize(len(ranked))
+
+	most = ranked[:n]
+	least = make([]database.EraStat, 0, n)
+	for i := len(ranked) - 1; i >= len(ranked)-n; i-- {
+		least = append(least, ranked[i])
+	}
+	return most, least
+}
+
+// successfulSplitSize returns how many decades (or eras) each of "most
+// successful" and "least successful" should show. Capped at half of
+// qualifiedCount so the two lists can never share an entry — a flat cap of
+// 5 would, with fewer than 10 qualified entries, put the same entries in
+// both lists (just reordered), which reads as a broken/duplicated page
+// rather than as "not enough data yet". Also capped at 5 so the lists
+// don't grow unbounded.
 func successfulSplitSize(qualifiedCount int) int {
 	n := qualifiedCount / 2
 	if n > 5 {

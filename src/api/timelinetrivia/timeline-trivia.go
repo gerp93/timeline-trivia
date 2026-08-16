@@ -142,7 +142,7 @@ func ensureGameExists(lobbyId uuid.UUID) (database.TimelineTriviaGame, error) {
 	}
 
 	// Auto-create the game with default settings
-	gameId, createErr := database.CreateTimelineTriviaGame(lobbyId, defaultCardsToWin)
+	gameId, createErr := database.CreateTimelineTriviaGame(lobbyId, defaultCardsToWin, database.DefaultTimelineId)
 	if createErr != nil {
 		return game, createErr
 	}
@@ -192,6 +192,40 @@ func Create(w http.ResponseWriter, r *http.Request) {
 	for _, idStr := range deckIdStrings {
 		if id, err := uuid.Parse(idStr); err == nil {
 			deckIds = append(deckIds, id)
+		}
+	}
+
+	timelineId, err := uuid.Parse(r.FormValue("timelineId"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("a timeline is required"))
+		return
+	}
+	timelineExists, err := database.TimelineExists(timelineId)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to check timeline"))
+		return
+	}
+	if !timelineExists {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("the selected timeline does not exist"))
+		return
+	}
+
+	// Defense in depth beyond the client-side filter: every selected deck
+	// must actually belong to the chosen timeline.
+	deckTimelineIds, err := database.GetDeckTimelineIds(deckIds)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to check deck timelines"))
+		return
+	}
+	for _, deckId := range deckIds {
+		if deckTimelineIds[deckId] != timelineId {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("one or more selected decks do not belong to the chosen timeline"))
+			return
 		}
 	}
 
@@ -266,7 +300,7 @@ func Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the TimelineTrivia game
-	gameId, err := database.CreateTimelineTriviaGame(lobbyId, cardsToWin)
+	gameId, err := database.CreateTimelineTriviaGame(lobbyId, cardsToWin, timelineId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to create game"))
@@ -409,6 +443,13 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A game only ever draws from decks belonging to one timeline, so its
+	// eras are fetched once and reused for every year formatted below.
+	eras, erasErr := database.GetErasForTimeline(game.TimelineId)
+	if erasErr != nil {
+		log.Println(erasErr)
+	}
+
 	// Get position from form
 	positionStr := r.FormValue("position")
 	position, err := strconv.Atoi(positionStr)
@@ -440,7 +481,7 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	guessedYear := database.FormatYear(guessedCard.CardYear)
+	guessedYear := database.FormatYearInEras(guessedCard.CardYear, eras)
 
 	if correct {
 		celebration, hasGif := winCelebrationFor(userId)
@@ -449,7 +490,7 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		winnerId, err := database.CheckTimelineTriviaWinner(game.Id)
 		if err == nil && winnerId != uuid.Nil {
 			// Game over! Record the win for stats (non-fatal on failure).
-			if logErr := database.LogWin(winnerId); logErr != nil {
+			if logErr := database.LogWin(winnerId, game.TimelineId); logErr != nil {
 				log.Println(logErr)
 			}
 			announce(lobbyId, fmt.Sprintf(
@@ -507,7 +548,7 @@ func PlaceCard(w http.ResponseWriter, r *http.Request) {
 		// year it actually was before ResolveCardRound clears the current
 		// card and draws the next one.
 		revealedCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
-		revealedYear := database.FormatYear(revealedCard.CardYear)
+		revealedYear := database.FormatYearInEras(revealedCard.CardYear, eras)
 
 		// Record the discard for stats (non-fatal on failure).
 		if revealedCard.CardId != uuid.Nil {
@@ -716,9 +757,13 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 	isSteal := game.CurrentPlayerId.Valid && game.RoundStarterPlayerId.Valid &&
 		game.CurrentPlayerId.UUID != game.RoundStarterPlayerId.UUID
 
+	eras, erasErr := database.GetErasForTimeline(game.TimelineId)
+	if erasErr != nil {
+		log.Println(erasErr)
+	}
 	funcMap := template.FuncMap{
 		"add":        func(a, b int) int { return a + b },
-		"formatYear": database.FormatYear,
+		"formatYear": func(year int) string { return database.FormatYearInEras(year, eras) },
 	}
 
 	tmpl, err := template.New("timeline.html").Funcs(funcMap).ParseFS(
@@ -988,7 +1033,11 @@ func TimeoutPass(w http.ResponseWriter, r *http.Request) {
 		// exhausted branch: the final miss (here, timeout) doesn't get its
 		// own chat line, it just folds into "Nobody got it".
 		revealedCard, _ := database.GetTimelineTriviaCurrentCard(game.Id)
-		revealedYear := database.FormatYear(revealedCard.CardYear)
+		eras, erasErr := database.GetErasForTimeline(game.TimelineId)
+		if erasErr != nil {
+			log.Println(erasErr)
+		}
+		revealedYear := database.FormatYearInEras(revealedCard.CardYear, eras)
 
 		if revealedCard.CardId != uuid.Nil {
 			if logErr := database.LogCardDiscard(revealedCard.CardId); logErr != nil {

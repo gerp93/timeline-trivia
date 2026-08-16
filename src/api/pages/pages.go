@@ -75,21 +75,80 @@ func FlaggedCards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	categories, err := database.GetCategories()
+	// Flagged cards can come from decks belonging to different timelines,
+	// so era and category resolution has to happen per-card rather than
+	// with one shared list — batch-resolve each distinct deck's timeline,
+	// then each distinct timeline's eras and categories.
+	deckIds := make([]uuid.UUID, 0, len(cards))
+	seenDeck := make(map[uuid.UUID]bool, len(cards))
+	for _, c := range cards {
+		if !seenDeck[c.DeckId] {
+			seenDeck[c.DeckId] = true
+			deckIds = append(deckIds, c.DeckId)
+		}
+	}
+	deckTimelineIds, err := database.GetDeckTimelineIds(deckIds)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to get categories"))
+		_, _ = w.Write([]byte("failed to get deck timelines"))
 		return
+	}
+	erasByTimeline := make(map[uuid.UUID][]database.Era, len(deckTimelineIds))
+	categoriesByTimeline := make(map[uuid.UUID][]database.Category, len(deckTimelineIds))
+	for _, timelineId := range deckTimelineIds {
+		if _, ok := erasByTimeline[timelineId]; !ok {
+			eras, err := database.GetErasForTimeline(timelineId)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte("failed to get eras"))
+				return
+			}
+			erasByTimeline[timelineId] = eras
+		}
+		if _, ok := categoriesByTimeline[timelineId]; !ok {
+			categories, err := database.GetCategoriesForTimeline(timelineId)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte("failed to get categories"))
+				return
+			}
+			categoriesByTimeline[timelineId] = categories
+		}
 	}
 
 	funcMap := template.FuncMap{
 		// Cards awaiting review may still be missing a year — that's often
 		// exactly why they were flagged.
-		"formatNullYear": func(year sql.NullInt64) string {
+		"formatNullYear": func(deckId uuid.UUID, year sql.NullInt64) string {
 			if !year.Valid {
 				return "—"
 			}
-			return database.FormatYear(int(year.Int64))
+			return database.FormatYearInEras(int(year.Int64), erasByTimeline[deckTimelineIds[deckId]])
+		},
+		"erasForDeck": func(deckId uuid.UUID) []database.Era {
+			return erasByTimeline[deckTimelineIds[deckId]]
+		},
+		"categoriesForDeck": func(deckId uuid.UUID) []database.Category {
+			return categoriesByTimeline[deckTimelineIds[deckId]]
+		},
+		"eraIdForCard": func(deckId uuid.UUID, year sql.NullInt64) string {
+			if !year.Valid {
+				return ""
+			}
+			if era, ok := database.FindEraForYear(int(year.Int64), erasByTimeline[deckTimelineIds[deckId]]); ok {
+				return era.Id.String()
+			}
+			return ""
+		},
+		"relativeYearForCard": func(deckId uuid.UUID, year sql.NullInt64) string {
+			if !year.Valid {
+				return ""
+			}
+			eras := erasByTimeline[deckTimelineIds[deckId]]
+			if era, ok := database.FindEraForYear(int(year.Int64), eras); ok {
+				return strconv.Itoa(database.RelativeYearInEra(int(year.Int64), era))
+			}
+			return strconv.FormatInt(year.Int64, 10)
 		},
 	}
 
@@ -102,29 +161,29 @@ func FlaggedCards(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		Cards      []database.FlaggedCard
-		Categories []database.Category
+		Cards []database.FlaggedCard
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
 		BasePageData: basePageData,
 		Cards:        cards,
-		Categories:   categories,
 	})
 }
 
-func Categories(w http.ResponseWriter, r *http.Request) {
+// Timelines is the admin management page for timelines, their eras, and
+// their categories.
+func Timelines(w http.ResponseWriter, r *http.Request) {
 	basePageData := gsApi.GetBasePageData(r)
-	basePageData.PageTitle = "Timeline Trivia - Categories"
+	basePageData.PageTitle = "Timeline Trivia - Timelines"
 
-	categories, err := database.GetCategoriesWithCounts()
+	timelines, err := database.GetTimelinesWithEras()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("failed to get categories"))
+		_, _ = w.Write([]byte("failed to get timelines"))
 		return
 	}
 
-	tmpl, err := parseChrome("html/pages/body/categories.html", nil)
+	tmpl, err := parseChrome("html/pages/body/timelines.html", nil)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to parse HTML"))
@@ -133,12 +192,14 @@ func Categories(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		Categories []database.CategoryWithCount
+		Timelines         []database.TimelineWithEras
+		DefaultTimelineId uuid.UUID
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		Categories:   categories,
+		BasePageData:      basePageData,
+		Timelines:         timelines,
+		DefaultTimelineId: database.DefaultTimelineId,
 	})
 }
 
@@ -215,15 +276,74 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	categories, err := database.GetCategories()
+	// Only timelines with at least one era are offered here — SetDeckTimeline
+	// rejects assigning a deck to an eras-less timeline server-side too, this
+	// just keeps the dropdown from offering a choice that would fail. The
+	// deck's current timeline is always included even if (unexpectedly) it
+	// has none, so the select still shows where the deck actually is.
+	timelinesWithEras, err := database.GetTimelinesWithEras()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get timelines"))
+		return
+	}
+
+	deckTimelineId, err := database.GetDeckTimelineId(deckId)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get deck timeline"))
+		return
+	}
+
+	timelines := make([]database.Timeline, 0, len(timelinesWithEras))
+	for _, t := range timelinesWithEras {
+		if (len(t.Eras) > 0 && len(t.Categories) > 0) || t.Id == deckTimelineId {
+			timelines = append(timelines, t.Timeline)
+		}
+	}
+
+	eras, err := database.GetErasForTimeline(deckTimelineId)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get eras"))
+		return
+	}
+
+	categories, err := database.GetCategoriesForTimeline(deckTimelineId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to get categories"))
 		return
 	}
 
-	tmpl, err := gsApiPages.ParseGameFragment(
+	// Prefill helpers for the Edit Card dialog: given an existing card's
+	// (possibly NULL) year, find which of the deck's timeline's eras it
+	// falls into and preselect that era + its in-era year, falling back to
+	// the "Other" (raw absolute) option when no era matches.
+	funcMap := template.FuncMap{
+		"eraIdForYear": func(year sql.NullInt64) string {
+			if !year.Valid {
+				return ""
+			}
+			if era, ok := database.FindEraForYear(int(year.Int64), eras); ok {
+				return era.Id.String()
+			}
+			return ""
+		},
+		"relativeYearForYear": func(year sql.NullInt64) string {
+			if !year.Valid {
+				return ""
+			}
+			if era, ok := database.FindEraForYear(int(year.Int64), eras); ok {
+				return strconv.Itoa(database.RelativeYearInEra(int(year.Int64), era))
+			}
+			return strconv.FormatInt(year.Int64, 10)
+		},
+	}
+
+	tmpl, err := gsApiPages.ParseGameFragmentWithFuncs(
 		static.StaticFiles,
+		funcMap,
 		"html/pages/body/deck-detail-chrome.html",
 		"html/pages/body/deck-card-management.html",
 		"html/pages/body/deck-search-controls.html",
@@ -236,24 +356,30 @@ func Deck(w http.ResponseWriter, r *http.Request) {
 
 	type data struct {
 		gsApi.BasePageData
-		Deck       gsDatabase.Deck
-		Text       string
-		Page       int
-		LastPage   int
-		RowCount   int
-		Cards      []database.Card
-		Categories []database.Category
+		Deck           gsDatabase.Deck
+		Text           string
+		Page           int
+		LastPage       int
+		RowCount       int
+		Cards          []database.Card
+		Categories     []database.Category
+		Timelines      []database.Timeline
+		DeckTimelineId uuid.UUID
+		Eras           []database.Era
 	}
 
 	_ = tmpl.ExecuteTemplate(w, "base", data{
-		BasePageData: basePageData,
-		Deck:         deck,
-		Text:         text,
-		Page:         page,
-		LastPage:     totalPageCount,
-		RowCount:     totalRowCount,
-		Cards:        cards,
-		Categories:   categories,
+		BasePageData:   basePageData,
+		Deck:           deck,
+		Text:           text,
+		Page:           page,
+		LastPage:       totalPageCount,
+		RowCount:       totalRowCount,
+		Cards:          cards,
+		Categories:     categories,
+		Timelines:      timelines,
+		DeckTimelineId: deckTimelineId,
+		Eras:           eras,
 	})
 }
 
@@ -277,20 +403,38 @@ func TimelineTriviaLobbies(w http.ResponseWriter, r *http.Request) {
 		cardCounts = make(map[uuid.UUID]int)
 	}
 
-	categories, err := database.GetCategories()
+	// All categories across every timeline — each one's own TimelineId (see
+	// database.Category) lets the create-lobby form restrict the exclusion
+	// list to whichever timeline is chosen, the same way deck selection is
+	// restricted.
+	categories, err := database.GetAllCategories()
 	if err != nil {
 		categories = make([]database.Category, 0)
 	}
 
+	// Which timeline each readable deck belongs to, so the create-lobby
+	// form can restrict deck selection to whichever timeline is chosen.
+	deckTimelineIds, err := database.GetDeckTimelineIds(deckIds)
+	if err != nil {
+		deckTimelineIds = make(map[uuid.UUID]uuid.UUID)
+	}
+
+	timelines, err := database.GetTimelines()
+	if err != nil {
+		timelines = make([]database.Timeline, 0)
+	}
+
 	type deckWithCardCount struct {
 		gsDatabase.Deck
-		CardCount int
+		CardCount  int
+		TimelineId uuid.UUID
 	}
 	decksWithCounts := make([]deckWithCardCount, 0, len(decks))
 	for _, d := range decks {
 		decksWithCounts = append(decksWithCounts, deckWithCardCount{
-			Deck:      d,
-			CardCount: cardCounts[d.Id],
+			Deck:       d,
+			CardCount:  cardCounts[d.Id],
+			TimelineId: deckTimelineIds[d.Id],
 		})
 	}
 
@@ -305,6 +449,8 @@ func TimelineTriviaLobbies(w http.ResponseWriter, r *http.Request) {
 		gsApi.BasePageData
 		Decks               []deckWithCardCount
 		Categories          []database.Category
+		Timelines           []database.Timeline
+		DefaultTimelineId   uuid.UUID
 		MinCardsPerWinRatio int
 	}
 
@@ -312,6 +458,8 @@ func TimelineTriviaLobbies(w http.ResponseWriter, r *http.Request) {
 		BasePageData:        basePageData,
 		Decks:               decksWithCounts,
 		Categories:          categories,
+		Timelines:           timelines,
+		DefaultTimelineId:   database.DefaultTimelineId,
 		MinCardsPerWinRatio: database.MinCardsPerWinRatio,
 	})
 }
@@ -364,7 +512,7 @@ func TimelineTriviaLobby(w http.ResponseWriter, r *http.Request) {
 	if err != nil || game.Id == uuid.Nil {
 		log.Printf("[INFO TimelineTriviaLobby] Game not found for lobby %s, auto-creating...", lobbyId)
 		// Auto-create the game with default settings
-		gameId, createErr := database.CreateTimelineTriviaGame(lobbyId, 10) // cards to win default
+		gameId, createErr := database.CreateTimelineTriviaGame(lobbyId, 10, database.DefaultTimelineId) // cards to win default
 		if createErr != nil {
 			log.Printf("[ERROR TimelineTriviaLobby] Failed to auto-create game for lobby %s: %v", lobbyId, createErr)
 			http.Redirect(w, r, "/timeline-trivia/lobbies", http.StatusSeeOther)
@@ -418,8 +566,12 @@ func TimelineTriviaLobby(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[ERROR TimelineTriviaLobby] Failed to get turn timer for lobby %s: %v", lobbyId, err)
 	}
 
+	eras, err := database.GetErasForTimeline(game.TimelineId)
+	if err != nil {
+		log.Printf("[ERROR TimelineTriviaLobby] Failed to get eras for timeline %s: %v", game.TimelineId, err)
+	}
 	funcMap := template.FuncMap{
-		"formatYear": database.FormatYear,
+		"formatYear": func(year int) string { return database.FormatYearInEras(year, eras) },
 	}
 
 	tmpl, err := parseChrome("html/pages/body/timeline-trivia.html", funcMap)
