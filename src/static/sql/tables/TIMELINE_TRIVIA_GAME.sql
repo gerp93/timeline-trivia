@@ -11,6 +11,11 @@ CREATE TABLE IF NOT EXISTS TIMELINE_TRIVIA_GAME(
     GAME_STATUS ENUM('waiting', 'active', 'finished') NOT NULL DEFAULT 'waiting',
     CARDS_TO_WIN INT NOT NULL DEFAULT 10,
     WINNER_ID UUID NULL,
+    -- Which timeline this game was created against (see
+    -- TIMELINE_TRIVIA_TIMELINE). Soft reference, not a DB FK, same rationale
+    -- as CARD.CATEGORY_ID: keeps the additive upgrade path (ALTER ... ADD
+    -- COLUMN IF NOT EXISTS) a single idempotent statement.
+    TIMELINE_TRIVIA_TIMELINE_ID UUID NOT NULL DEFAULT '9f9a1a00-d22a-11f0-b4d2-60cf84649547',
     PRIMARY KEY(ID),
     FOREIGN KEY(LOBBY_ID) REFERENCES LOBBY(ID) ON DELETE CASCADE,
     FOREIGN KEY(CURRENT_PLAYER_ID) REFERENCES PLAYER(ID) ON DELETE SET NULL,

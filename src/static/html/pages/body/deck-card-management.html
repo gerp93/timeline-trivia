@@ -6,6 +6,26 @@
     <span class="bi bi-upload"></span> Import Cards
 </button>
 {{end}}
+{{define "deck-update-extra-fields"}}
+<h3>Set Deck Timeline</h3>
+<form
+    hx-put="/api/deck/{{.Deck.Id}}/timeline"
+    hx-target="find .htmx-result"
+>
+    <div class="form-input">
+        <label for="deckTimelineId">Timeline</label>
+        <select id="deckTimelineId" name="timelineId" autocomplete="off">
+            {{$current := .DeckTimelineId}}
+            {{range .Timelines}}
+            <option value="{{.Id}}" {{if eq (printf "%s" .Id) (printf "%s" $current)}}selected{{end}}>{{.Name}}</option>
+            {{end}}
+        </select>
+    </div>
+    <br />
+    <div class="htmx-result"></div>
+    <input type="submit" value="Set Deck Timeline" />
+</form>
+{{end}}
 {{define "card-management"}}
 {{if eq .RowCount 0}}
 No cards found with that search criteria.
@@ -59,13 +79,25 @@ No cards found with that search criteria.
                                 value="{{.DeckId}}"
                                 hidden
                             />
-                            <label for="year{{.Id}}">Year</label>
+                            {{$eraId := eraIdForYear .Year}}
+                            <label for="eraId{{.Id}}">Era</label>
+                            <select
+                                id="eraId{{.Id}}"
+                                name="eraId"
+                                required="required"
+                                autocomplete="off"
+                            >
+                                {{range $.Eras}}
+                                <option value="{{.Id}}" {{if eq (printf "%s" .Id) $eraId}}selected{{end}}>{{.Name}}{{if .Abbreviation}} ({{.Abbreviation}}){{end}}</option>
+                                {{end}}
+                            </select>
+                            <label for="relativeYear{{.Id}}">Year within era</label>
                             <input
                                 type="number"
-                                id="year{{.Id}}"
-                                name="year"
+                                id="relativeYear{{.Id}}"
+                                name="relativeYear"
                                 placeholder="Enter Year"
-                                {{if .Year.Valid}}value="{{.Year.Int64}}"{{end}}
+                                value="{{relativeYearForYear .Year}}"
                                 autocomplete="off"
                             />
                             <label for="category{{.Id}}">Category</label>
@@ -148,11 +180,22 @@ No cards found with that search criteria.
                 value="{{.Deck.Id}}"
                 hidden
             />
-            <label for="newCardYear">Year</label>
+            <label for="newCardEraId">Era</label>
+            <select
+                id="newCardEraId"
+                name="eraId"
+                required="required"
+                autocomplete="off"
+            >
+                {{range .Eras}}
+                <option value="{{.Id}}">{{.Name}}{{if .Abbreviation}} ({{.Abbreviation}}){{end}}</option>
+                {{end}}
+            </select>
+            <label for="newCardRelativeYear">Year within era</label>
             <input
                 type="number"
-                id="newCardYear"
-                name="year"
+                id="newCardRelativeYear"
+                name="relativeYear"
                 placeholder="Enter Year"
                 autocomplete="off"
             />
@@ -207,10 +250,15 @@ No cards found with that search criteria.
         Upload a <code>.json</code> file containing an array of cards.
         Each entry must be exactly:
     </p>
-    <pre>{ "year": number, "event": string, "category": string }</pre>
+    <pre>{ "era": string, "year": number, "event": string, "category": string }</pre>
     <p>
-        Cards whose text already exists in this deck are skipped. Max
-        1000 cards, 2&nbsp;MB per upload.
+        <code>era</code> and <code>category</code> must each exactly match
+        one already defined for this deck's timeline (see
+        <a href="/timelines">Timelines</a>), and <code>year</code> is the
+        year <em>within</em> the named era — the same "pick an era, type
+        the in-era year" a card's Year field uses, not the raw absolute
+        year. Cards whose text already exists in this deck are skipped.
+        Max 1000 cards, 2&nbsp;MB per upload.
     </p>
     <form
         hx-post="/api/deck/{{.Deck.Id}}/card-import"

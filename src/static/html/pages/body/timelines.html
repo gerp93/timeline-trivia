@@ -1,0 +1,383 @@
+{{define "body"}}
+<div style="display: grid; grid-auto-flow: column">
+    <h2>Timelines</h2>
+    <div style="text-align: right;">
+        <button onclick="document.getElementById('timeline-create-dialog').showModal()">
+            <span class="bi bi-plus-circle"></span> Create Timeline
+        </button>
+    </div>
+</div>
+<p>
+    A lobby is created against one timeline, and can only draw from decks
+    that belong to it. Eras are ordered, named year-range labels within a
+    timeline (e.g. B.C.E/C.E, or BBY/ABY) used when displaying a card's
+    year — they don't affect gameplay. Categories are each timeline's own
+    list a card is placed into; a deck can only be assigned to a timeline
+    once it has at least one era <em>and</em> at least one category.
+</p>
+{{if eq (len .Timelines) 0}}
+No timelines exist yet.
+{{else}}
+{{range .Timelines}}
+{{$timeline := .Timeline}}
+{{$isDefault := eq (printf "%s" $timeline.Id) (printf "%s" $.DefaultTimelineId)}}
+<div style="border: 1px solid var(--color-border, #444); border-radius: 6px; padding: 12px; margin-bottom: 16px;">
+    <div style="display: grid; grid-auto-flow: column; align-items: center;">
+        <div>
+            <h3 style="margin: 0;">
+                {{$timeline.Name}}
+                {{if $isDefault}}<span style="font-weight: normal; font-size: 0.8em; opacity: 0.7;">(default)</span>{{end}}
+            </h3>
+            <span style="font-size: 0.85em; opacity: 0.8;">{{.DeckCount}} deck{{if ne .DeckCount 1}}s{{end}}</span>
+        </div>
+        <div style="text-align: right;">
+            <button onclick="document.getElementById('era-create-dialog-{{$timeline.Id}}').showModal()">
+                <span class="bi bi-plus-circle"></span> Add Era
+            </button>
+            <button onclick="document.getElementById('category-create-dialog-{{$timeline.Id}}').showModal()">
+                <span class="bi bi-plus-circle"></span> Add Category
+            </button>
+            {{if not $isDefault}}
+            <span
+                title="Delete Timeline"
+                class="bi bi-trash clickable"
+                onclick="document.getElementById('timeline-{{$timeline.Id}}-delete-dialog').showModal()"
+                style="margin-left: 10px;"
+            ></span>
+            {{end}}
+        </div>
+    </div>
+
+    {{if eq (len .Eras) 0}}
+    <p style="font-size: 0.85em; opacity: 0.8;">No eras defined yet — years will display with no label.</p>
+    {{else}}
+    <table>
+        <thead>
+            <tr>
+                <th>Order</th>
+                <th>Name</th>
+                <th>Abbreviation</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Direction</th>
+                <th>Epoch Offset</th>
+                <th>Delete</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Eras}}
+            <tr>
+                <td>{{.SortOrder}}</td>
+                <td>{{.Name}}</td>
+                <td>{{if .Abbreviation}}{{.Abbreviation}}{{else}}&mdash;{{end}}</td>
+                <td>{{if .FromYear.Valid}}{{.FromYear.Int64}}{{else}}&mdash;{{end}}</td>
+                <td>{{if .ToYear.Valid}}{{.ToYear.Int64}}{{else}}&mdash;{{end}}</td>
+                <td>{{if eq .Direction "BACKWARD"}}Backward{{else}}Forward{{end}}</td>
+                <td>{{.EpochOffset}}</td>
+                <td>
+                    <div style="text-align: center;">
+                        <span
+                            title="Delete Era"
+                            class="bi bi-trash clickable"
+                            hx-delete="/api/era/{{.Id}}"
+                            hx-confirm="Delete the &quot;{{.Name}}&quot; era?"
+                        ></span>
+                    </div>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{end}}
+
+    <dialog id="era-create-dialog-{{$timeline.Id}}">
+        <div style="display: grid; grid-auto-flow: column">
+            <div>
+                <h3>Add Era to "{{$timeline.Name}}"</h3>
+            </div>
+            <div>
+                <span
+                    class="bi bi-x-lg close-button"
+                    onclick="document.getElementById('era-create-dialog-{{$timeline.Id}}').close()"
+                ></span>
+            </div>
+        </div>
+        <form
+            hx-post="/api/timeline/{{$timeline.Id}}/era/create"
+            hx-target="find .htmx-result"
+        >
+            <div class="form-input">
+                <label for="eraName{{$timeline.Id}}">Name</label>
+                <input
+                    type="text"
+                    id="eraName{{$timeline.Id}}"
+                    name="name"
+                    maxlength="255"
+                    placeholder="e.g. Before Battle of Yavin"
+                    required="required"
+                    autocomplete="off"
+                />
+                <label for="eraAbbreviation{{$timeline.Id}}">Abbreviation (optional)</label>
+                <input
+                    type="text"
+                    id="eraAbbreviation{{$timeline.Id}}"
+                    name="abbreviation"
+                    maxlength="50"
+                    placeholder="e.g. BBY"
+                    autocomplete="off"
+                />
+                <label for="eraSortOrder{{$timeline.Id}}">Order (earliest = 0)</label>
+                <input
+                    type="number"
+                    id="eraSortOrder{{$timeline.Id}}"
+                    name="sortOrder"
+                    value="0"
+                    required="required"
+                />
+                <label for="eraFromYear{{$timeline.Id}}">From year (optional)</label>
+                <input
+                    type="number"
+                    id="eraFromYear{{$timeline.Id}}"
+                    name="fromYear"
+                    placeholder="Leave blank for no earliest bound"
+                />
+                <label for="eraToYear{{$timeline.Id}}">To year (optional)</label>
+                <input
+                    type="number"
+                    id="eraToYear{{$timeline.Id}}"
+                    name="toYear"
+                    placeholder="Leave blank for no latest bound"
+                />
+                <label for="eraDirection{{$timeline.Id}}">Direction</label>
+                <select
+                    id="eraDirection{{$timeline.Id}}"
+                    name="direction"
+                    required="required"
+                    autocomplete="off"
+                >
+                    <option value="FORWARD" selected>Forward — counts up, e.g. C.E., A.B.Y., a Tolkien Age</option>
+                    <option value="BACKWARD">Backward — counts down into the past, e.g. B.C.E., B.B.Y.</option>
+                </select>
+                <label for="eraEpochOffset{{$timeline.Id}}">Epoch offset</label>
+                <input
+                    type="number"
+                    id="eraEpochOffset{{$timeline.Id}}"
+                    name="epochOffset"
+                    value="0"
+                />
+            </div>
+            <p style="font-size: 0.85em; opacity: 0.8; margin: 6px 0;">
+                Epoch offset is the absolute year equal to year 0 in this
+                era. Leave at 0 for an era that starts counting from your
+                timeline's epoch (like B.C.E/C.E do); for a later era in a
+                sequence that resets its own count (like Tolkien's Ages),
+                set it to the absolute year where this era begins.
+            </p>
+            <div class="htmx-result"></div>
+            <input type="submit" value="Add Era" />
+        </form>
+    </dialog>
+
+    <h4 style="margin-bottom: 4px;">Categories</h4>
+    {{if eq (len .Categories) 0}}
+    <p style="font-size: 0.85em; opacity: 0.8;">No categories defined yet — a deck can't be assigned here until at least one exists.</p>
+    {{else}}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Cards</th>
+                <th>Delete</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{$categories := .Categories}}
+            {{range .Categories}}
+            {{$cat := .}}
+            <tr>
+                <td>{{.Name}}</td>
+                <td>{{.CardCount}}</td>
+                <td>
+                    <div style="text-align: center;">
+                        {{if gt (len $categories) 1}}
+                        <span
+                            title="Delete Category"
+                            class="bi bi-trash clickable"
+                            onclick="document.getElementById('category-{{.Id}}-delete-dialog').showModal()"
+                        ></span>
+                        {{else}}
+                        <span title="The only remaining category cannot be deleted">&mdash;</span>
+                        {{end}}
+                    </div>
+                    {{if gt (len $categories) 1}}
+                    <dialog id="category-{{.Id}}-delete-dialog">
+                        <div style="display: grid; grid-auto-flow: column">
+                            <div>
+                                <h3>Delete "{{.Name}}"</h3>
+                            </div>
+                            <div>
+                                <span
+                                    class="bi bi-x-lg close-button"
+                                    onclick="document.getElementById('category-{{.Id}}-delete-dialog').close()"
+                                ></span>
+                            </div>
+                        </div>
+                        <p>
+                            This category has {{.CardCount}} card{{if ne .CardCount 1}}s{{end}}.
+                            Choose a category to move {{if ne .CardCount 1}}them{{else}}it{{end}}
+                            into, then confirm the delete.
+                        </p>
+                        <form
+                            hx-post="/api/category/{{.Id}}/delete"
+                            hx-target="find .htmx-result"
+                            hx-confirm="Move all cards to the chosen category and delete this one?"
+                        >
+                            <div class="form-input">
+                                <label for="target{{.Id}}">Move cards to</label>
+                                <select
+                                    id="target{{.Id}}"
+                                    name="targetCategoryId"
+                                    required="required"
+                                    autocomplete="off"
+                                >
+                                    <option value="">-- Select a Category --</option>
+                                    {{range $categories}}
+                                    {{if ne (printf "%s" .Id) (printf "%s" $cat.Id)}}
+                                    <option value="{{.Id}}">{{.Name}}</option>
+                                    {{end}}
+                                    {{end}}
+                                </select>
+                            </div>
+                            <br />
+                            <div class="htmx-result"></div>
+                            <input
+                                type="submit"
+                                value="Reassign & Delete"
+                            />
+                        </form>
+                    </dialog>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{end}}
+
+    <dialog id="category-create-dialog-{{$timeline.Id}}">
+        <div style="display: grid; grid-auto-flow: column">
+            <div>
+                <h3>Add Category to "{{$timeline.Name}}"</h3>
+            </div>
+            <div>
+                <span
+                    class="bi bi-x-lg close-button"
+                    onclick="document.getElementById('category-create-dialog-{{$timeline.Id}}').close()"
+                ></span>
+            </div>
+        </div>
+        <form
+            hx-post="/api/timeline/{{$timeline.Id}}/category/create"
+            hx-target="find .htmx-result"
+        >
+            <div class="form-input">
+                <label for="categoryName{{$timeline.Id}}">Name</label>
+                <input
+                    type="text"
+                    id="categoryName{{$timeline.Id}}"
+                    name="name"
+                    maxlength="255"
+                    placeholder="e.g. History"
+                    required="required"
+                    autocomplete="off"
+                />
+            </div>
+            <br />
+            <div class="htmx-result"></div>
+            <input type="submit" value="Add Category" />
+        </form>
+    </dialog>
+
+    {{if not $isDefault}}
+    <dialog id="timeline-{{$timeline.Id}}-delete-dialog">
+        <div style="display: grid; grid-auto-flow: column">
+            <div>
+                <h3>Delete "{{$timeline.Name}}"</h3>
+            </div>
+            <div>
+                <span
+                    class="bi bi-x-lg close-button"
+                    onclick="document.getElementById('timeline-{{$timeline.Id}}-delete-dialog').close()"
+                ></span>
+            </div>
+        </div>
+        <p>
+            This timeline has {{.DeckCount}} deck{{if ne .DeckCount 1}}s{{end}}.
+            Choose a timeline to move {{if ne .DeckCount 1}}them{{else}}it{{end}}
+            and its categories into, then confirm the delete. Its eras are
+            removed with it.
+        </p>
+        <form
+            hx-post="/api/timeline/{{$timeline.Id}}/delete"
+            hx-target="find .htmx-result"
+            hx-confirm="Move all decks to the chosen timeline and delete this one?"
+        >
+            <div class="form-input">
+                <label for="target{{$timeline.Id}}">Move decks to</label>
+                <select
+                    id="target{{$timeline.Id}}"
+                    name="targetTimelineId"
+                    required="required"
+                    autocomplete="off"
+                >
+                    <option value="">-- Select a Timeline --</option>
+                    {{range $.Timelines}}
+                    {{if ne (printf "%s" .Timeline.Id) (printf "%s" $timeline.Id)}}
+                    <option value="{{.Timeline.Id}}">{{.Timeline.Name}}</option>
+                    {{end}}
+                    {{end}}
+                </select>
+            </div>
+            <br />
+            <div class="htmx-result"></div>
+            <input type="submit" value="Reassign & Delete" />
+        </form>
+    </dialog>
+    {{end}}
+</div>
+{{end}}
+{{end}}
+<dialog id="timeline-create-dialog">
+    <div style="display: grid; grid-auto-flow: column">
+        <div>
+            <h3>Create Timeline</h3>
+        </div>
+        <div>
+            <span
+                class="bi bi-x-lg close-button"
+                onclick="document.getElementById('timeline-create-dialog').close()"
+            ></span>
+        </div>
+    </div>
+    <form
+        hx-post="/api/timeline/create"
+        hx-target="find .htmx-result"
+    >
+        <div class="form-input">
+            <label for="createTimelineName">Name</label>
+            <input
+                type="text"
+                id="createTimelineName"
+                name="name"
+                maxlength="255"
+                placeholder="e.g. Star Wars"
+                required="required"
+                autocomplete="off"
+            />
+        </div>
+        <br />
+        <div class="htmx-result"></div>
+        <input type="submit" value="Create Timeline" />
+    </form>
+</dialog>
+{{end}}

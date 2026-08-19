@@ -14,13 +14,19 @@ import (
 	"github.com/google/uuid"
 )
 
-// FormatYear renders a card year for display: negative (BCE) years show as
-// a positive number with a "B.C.E" suffix instead of a leading minus.
+// FormatYear renders a card year for display using the default "Real Life"
+// timeline's eras (negative years show as a positive number with a
+// "B.C.E" suffix instead of a leading minus). It's a convenience for
+// callers that don't have a specific game/timeline in context — see
+// FormatYearInEras for the general, timeline-aware version gameplay
+// handlers use once they know which timeline a game belongs to.
 func FormatYear(year int) string {
-	if year < 0 {
-		return strconv.Itoa(-year) + " B.C.E"
+	eras, err := GetErasForTimeline(DefaultTimelineId)
+	if err != nil {
+		log.Println(err)
+		return strconv.Itoa(year)
 	}
-	return strconv.Itoa(year)
+	return FormatYearInEras(year, eras)
 }
 
 // MinCardsPerWinRatio is the minimum multiple of CardsToWin that a lobby's
@@ -70,6 +76,7 @@ type TimelineTriviaGame struct {
 	GameStatus           string
 	CardsToWin           int
 	WinnerId             uuid.NullUUID
+	TimelineId           uuid.UUID
 }
 
 // TimelineTriviaTimelineCard represents a card in a player's timeline
@@ -188,7 +195,8 @@ func getTimelineTriviaGameByColumn(column string, value uuid.UUID) (TimelineTriv
 			ROUND_STARTER_PLAYER_ID,
 			GAME_STATUS,
 			CARDS_TO_WIN,
-			WINNER_ID
+			WINNER_ID,
+			TIMELINE_TRIVIA_TIMELINE_ID
 		FROM TIMELINE_TRIVIA_GAME
 		WHERE %s = ?
 	`, column)
@@ -208,6 +216,7 @@ func getTimelineTriviaGameByColumn(column string, value uuid.UUID) (TimelineTriv
 			&game.GameStatus,
 			&game.CardsToWin,
 			&game.WinnerId,
+			&game.TimelineId,
 		); err != nil {
 			log.Println(err)
 			return game, errors.New("failed to scan row in query results")
@@ -217,8 +226,11 @@ func getTimelineTriviaGameByColumn(column string, value uuid.UUID) (TimelineTriv
 	return game, nil
 }
 
-// CreateTimelineTriviaGame creates a new TimelineTrivia game for a lobby
-func CreateTimelineTriviaGame(lobbyId uuid.UUID, cardsToWin int) (uuid.UUID, error) {
+// CreateTimelineTriviaGame creates a new TimelineTrivia game for a lobby,
+// tied to the given timeline (see database.DefaultTimelineId for the
+// "Real Life" fallback used by callers that don't yet have a specific
+// timeline in context).
+func CreateTimelineTriviaGame(lobbyId uuid.UUID, cardsToWin int, timelineId uuid.UUID) (uuid.UUID, error) {
 	id, err := uuid.NewUUID()
 	if err != nil {
 		log.Println(err)
@@ -229,11 +241,12 @@ func CreateTimelineTriviaGame(lobbyId uuid.UUID, cardsToWin int) (uuid.UUID, err
 		INSERT INTO TIMELINE_TRIVIA_GAME(
 			ID,
 			LOBBY_ID,
-			CARDS_TO_WIN
+			CARDS_TO_WIN,
+			TIMELINE_TRIVIA_TIMELINE_ID
 		)
-		VALUES (?, ?, ?)
+		VALUES (?, ?, ?, ?)
 	`
-	return id, execute(sqlString, id, lobbyId, cardsToWin)
+	return id, execute(sqlString, id, lobbyId, cardsToWin, timelineId)
 }
 
 // CreateTimelineTriviaLobby creates a new lobby for TimelineTrivia, delegating base

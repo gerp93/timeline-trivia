@@ -7,6 +7,32 @@
     </div>
 </div>
 
+<div class="form-input" style="margin-bottom: 1em;">
+    <label for="timelineSelect">Timeline</label>
+    <select
+        id="timelineSelect"
+        onchange="window.location.href = this.value ? '?timeline=' + this.value : window.location.pathname"
+    >
+        <option value="" {{if isNilUUID .SelectedTimeline}}selected{{end}}>Overall</option>
+        {{range .Timelines}}
+        <option value="{{.Id}}" {{if eq (printf "%s" .Id) (printf "%s" $.SelectedTimeline)}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+    </select>
+
+    {{if not (isNilUUID .SelectedTimeline)}}
+    <form method="get" style="display: inline;">
+        <input type="hidden" name="timeline" value="{{.SelectedTimeline}}" />
+        <label for="eraSelect">Era</label>
+        <select id="eraSelect" name="era" onchange="this.form.submit()">
+            <option value="" {{if isNilUUID $.SelectedEra}}selected{{end}}>All Eras</option>
+            {{range .Eras}}
+            <option value="{{.Id}}" {{if eq (printf "%s" .Id) (printf "%s" $.SelectedEra)}}selected{{end}}>{{.Name}}{{if .Abbreviation}} ({{.Abbreviation}}){{end}}</option>
+            {{end}}
+        </select>
+    </form>
+    {{end}}
+</div>
+
 <h3>Overall</h3>
 <table>
     <tbody>
@@ -29,6 +55,7 @@
     </tbody>
 </table>
 
+{{if isNilUUID .SelectedTimeline}}
 <h3>Decades Guessed Most Often</h3>
 {{if eq (len .MostOften) 0}}
 <p>No guesses recorded yet.</p>
@@ -53,7 +80,7 @@
 <h3>Best &amp; Worst Decades</h3>
 <p>
     Ranked by accuracy, counting only decades with at least
-    {{.MinDecadeGuesses}} guesses so a lucky few don't skew the ranking.
+    {{.MinBucketGuesses}} guesses so a lucky few don't skew the ranking.
 </p>
 {{if not .HasQualified}}
 <p><em>Not enough guesses in any one decade yet &mdash; keep playing!</em></p>
@@ -94,6 +121,74 @@
         </table>
     </div>
 </div>
+{{end}}
+{{else}}
+<h3>Eras Guessed Most Often</h3>
+{{if eq (len .EraMostOften) 0}}
+<p>No guesses recorded yet.</p>
+{{else}}
+<table>
+    <thead>
+        <tr><th>Era</th><th>Guesses</th><th>Correct</th><th>Accuracy</th></tr>
+    </thead>
+    <tbody>
+        {{range .EraMostOften}}
+        <tr>
+            <td>{{.Label}}</td>
+            <td>{{.Attempts}}</td>
+            <td>{{.Correct}}</td>
+            <td>{{printf "%.0f%%" .Rate}}</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{end}}
+
+<h3>Best &amp; Worst Eras</h3>
+<p>
+    Ranked by accuracy, counting only eras with at least
+    {{.MinBucketGuesses}} guesses so a lucky few don't skew the ranking.
+</p>
+{{if not .HasEraQualified}}
+<p><em>Not enough guesses in any one era yet &mdash; keep playing!</em></p>
+{{else}}
+<div style="display: grid; grid-auto-flow: column; gap: 2em;">
+    <div>
+        <h4>Most Successful</h4>
+        <table>
+            <thead>
+                <tr><th>Era</th><th>Accuracy</th><th>Guesses</th></tr>
+            </thead>
+            <tbody>
+                {{range .EraMostSuccessful}}
+                <tr>
+                    <td>{{.Label}}</td>
+                    <td>{{printf "%.0f%%" .Rate}}</td>
+                    <td>{{.Correct}}/{{.Attempts}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    <div>
+        <h4>Least Successful</h4>
+        <table>
+            <thead>
+                <tr><th>Era</th><th>Accuracy</th><th>Guesses</th></tr>
+            </thead>
+            <tbody>
+                {{range .EraLeastSuccessful}}
+                <tr>
+                    <td>{{.Label}}</td>
+                    <td>{{printf "%.0f%%" .Rate}}</td>
+                    <td>{{.Correct}}/{{.Attempts}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{end}}
 {{end}}
 
 <h3>Ran Out of Time</h3>

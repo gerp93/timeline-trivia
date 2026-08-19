@@ -42,10 +42,12 @@ func LogCardDiscard(cardId uuid.UUID) error {
 	return execute(sqlString, cardId)
 }
 
-// LogWin records that a user won a game.
-func LogWin(userId uuid.UUID) error {
-	sqlString := `INSERT INTO TIMELINE_TRIVIA_LOG_WIN(USER_ID) VALUES (?)`
-	return execute(sqlString, userId)
+// LogWin records that a user won a game, tied to the timeline the game was
+// played against (see TIMELINE_TRIVIA_LOG_WIN.sql for why this table
+// snapshots a timeline id directly rather than deriving it via join).
+func LogWin(userId uuid.UUID, timelineId uuid.UUID) error {
+	sqlString := `INSERT INTO TIMELINE_TRIVIA_LOG_WIN(USER_ID, TIMELINE_TRIVIA_TIMELINE_ID) VALUES (?, ?)`
+	return execute(sqlString, userId, timelineId)
 }
 
 // LogTimeout records that a user lost their shot at a card because the turn

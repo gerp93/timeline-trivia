@@ -6,6 +6,16 @@
     </div>
 </div>
 <p>Ranked by games won, then guess accuracy. Guess numbers count public decks only.</p>
+
+<form method="get" class="form-input" style="margin-bottom: 1em;">
+    <label for="timelineSelect">Timeline</label>
+    <select id="timelineSelect" name="timeline" onchange="this.form.submit()">
+        <option value="" {{if isNilUUID .SelectedTimeline}}selected{{end}}>Overall</option>
+        {{range .Timelines}}
+        <option value="{{.Id}}" {{if eq (printf "%s" .Id) (printf "%s" $.SelectedTimeline)}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+    </select>
+</form>
 {{if eq (len .Entries) 0}}
 <p>No games have been played yet.</p>
 {{else}}

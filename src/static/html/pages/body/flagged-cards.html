@@ -27,7 +27,7 @@ No cards are waiting for review.
         {{$card := .}}
         <tr>
             <td class="wrap-new-lines">{{.Text}}</td>
-            <td>{{formatNullYear .Year}}</td>
+            <td>{{formatNullYear .DeckId .Year}}</td>
             <td>{{if .CategoryName.Valid}}{{.CategoryName.String}}{{else}}&mdash;{{end}}</td>
             <td>{{.DeckName}}</td>
             <td>{{.CreatedOnDate.Format "2006-01-02"}}</td>
@@ -85,12 +85,24 @@ No cards are waiting for review.
                                 required="required"
                                 autocomplete="off"
                             />
-                            <label for="year{{.Id}}">Year (negative for B.C.E)</label>
+                            {{$eraId := eraIdForCard .DeckId .Year}}
+                            <label for="eraId{{.Id}}">Era</label>
+                            <select
+                                id="eraId{{.Id}}"
+                                name="eraId"
+                                required="required"
+                                autocomplete="off"
+                            >
+                                {{range erasForDeck .DeckId}}
+                                <option value="{{.Id}}" {{if eq (printf "%s" .Id) $eraId}}selected{{end}}>{{.Name}}{{if .Abbreviation}} ({{.Abbreviation}}){{end}}</option>
+                                {{end}}
+                            </select>
+                            <label for="relativeYear{{.Id}}">Year within era</label>
                             <input
                                 type="number"
-                                id="year{{.Id}}"
-                                name="year"
-                                value="{{if .Year.Valid}}{{.Year.Int64}}{{end}}"
+                                id="relativeYear{{.Id}}"
+                                name="relativeYear"
+                                value="{{relativeYearForCard .DeckId .Year}}"
                                 autocomplete="off"
                             />
                             <label for="category{{.Id}}">Category</label>
@@ -100,7 +112,7 @@ No cards are waiting for review.
                                 autocomplete="off"
                             >
                                 <option value="">-- No Category --</option>
-                                {{range $.Categories}}
+                                {{range categoriesForDeck .DeckId}}
                                 <option
                                     value="{{.Id}}"
                                     {{if and $card.CategoryId.Valid (eq (printf "%s" .Id) (printf "%s" $card.CategoryId.UUID))}}selected{{end}}

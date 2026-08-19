@@ -50,7 +50,7 @@ func TestSharedPageTemplatesRender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create deck: %v", err)
 	}
-	categoryId, err := database.CreateCategory("Render Category")
+	categoryId, err := database.CreateCategory(database.DefaultTimelineId, "Render Category")
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}

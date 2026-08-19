@@ -190,7 +190,7 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create deck: %v", err)
 	}
-	categoryId, err := database.CreateCategory("E2E Category")
+	categoryId, err := database.CreateCategory(database.DefaultTimelineId, "E2E Category")
 	if err != nil {
 		t.Fatalf("create category: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 		}
 		p.playerId = pid
 	}
-	gameId, err := database.CreateTimelineTriviaGame(lobbyId, 10)
+	gameId, err := database.CreateTimelineTriviaGame(lobbyId, 10, database.DefaultTimelineId)
 	if err != nil {
 		t.Fatalf("create game: %v", err)
 	}
@@ -437,8 +437,8 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 	// ================= 3. timeout pass, no penalty ==========================
 	timedOut := currentPlayer()
 	preTimeline, _ := database.GetPlayerTimeline(gameId, timedOut.playerId)
-	preGuesses, _ := database.GetUserStatTotals(timedOut.userId, timedOut.userId)
-	preTimeouts, _ := database.GetUserTimeoutStats(timedOut.userId, timedOut.userId)
+	preGuesses, _ := database.GetUserStatTotals(timedOut.userId, timedOut.userId, uuid.Nil, uuid.Nil)
+	preTimeouts, _ := database.GetUserTimeoutStats(timedOut.userId, timedOut.userId, uuid.Nil)
 	rec = serve(apiTimelineTrivia.TimeoutPass, authedRequest(t, "POST",
 		"/api/timeline-trivia/"+lobbyId.String()+"/timeout", url.Values{}, timedOut.userId))
 	if rec.Code != http.StatusOK {
@@ -446,7 +446,7 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 	}
 	// The timeout is logged for stats, at the timer setting in force (30s,
 	// set during lobby setup above)...
-	postTimeouts, err := database.GetUserTimeoutStats(timedOut.userId, timedOut.userId)
+	postTimeouts, err := database.GetUserTimeoutStats(timedOut.userId, timedOut.userId, uuid.Nil)
 	if err != nil {
 		t.Fatalf("timeout stats: %v", err)
 	}
@@ -463,7 +463,7 @@ func TestPlaytestFeedbackEndToEnd(t *testing.T) {
 		t.Errorf("timeout not logged against the 30s timer setting: %+v", postTimeouts.ByDuration)
 	}
 	// ...but must NOT be counted as a guess, or it would deflate accuracy.
-	postGuesses, _ := database.GetUserStatTotals(timedOut.userId, timedOut.userId)
+	postGuesses, _ := database.GetUserStatTotals(timedOut.userId, timedOut.userId, uuid.Nil, uuid.Nil)
 	if postGuesses.TotalGuesses != preGuesses.TotalGuesses {
 		t.Errorf("timeout was counted as a guess: %d -> %d", preGuesses.TotalGuesses, postGuesses.TotalGuesses)
 	}

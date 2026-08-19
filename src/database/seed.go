@@ -14,41 +14,54 @@ import (
 )
 
 // Limits for card-import JSON (both the embedded default deck and any
-// user-uploaded file), matching the CARD table's own constraints plus a
-// sane cap on how much a single request may insert.
+// user-uploaded file), matching the CARD/TIMELINE_TRIVIA_ERA/
+// TIMELINE_TRIVIA_CATEGORY tables' own constraints plus a sane cap on how
+// much a single request may insert. There's no longer a blanket min/max
+// on the year itself — that was a Real-Life-shaped sanity check, and it's
+// superseded by the precise per-era bounds check every import now goes
+// through (see absoluteYearInEraBounds).
 const (
 	maxImportCards       = 1000
 	maxImportEventLen    = 510 // CARD.TEXT VARCHAR(510)
 	maxImportCategoryLen = 255
-	minImportYear        = -10000
-	maxImportYear        = 3000
+	maxImportEraLen      = 255 // TIMELINE_TRIVIA_ERA.NAME VARCHAR(255)
 )
 
 // DefaultDeckCard is one entry in a card-import JSON payload, after
-// validation. Category is carried through and required — cards are placed into
-// one of the predefined TIMELINE_TRIVIA_CATEGORY entries.
+// validation. Category is carried through and required — cards are placed
+// into one of the predefined TIMELINE_TRIVIA_CATEGORY entries. RelativeYear
+// is the year *within* the named Era (not the absolute CARD_YEAR) — the
+// same "pick an era, type the in-era year" shape the manual create/edit
+// card dialogs use, resolved against the target deck's timeline by
+// resolveEras/absoluteYearInEraBounds.
 type DefaultDeckCard struct {
-	Year     int
-	Event    string
-	Category string
+	Era          string
+	RelativeYear int
+	Event        string
+	Category     string
 }
 
-// importCardJSON is the strict on-the-wire shape: exactly {year, event,
-// category}, nothing more, nothing less. Pointer fields so a missing key
-// (nil) is distinguishable from an explicit zero value/empty string.
+// importCardJSON is the strict on-the-wire shape: exactly {era, year,
+// event, category}, nothing more, nothing less. Pointer fields so a
+// missing key (nil) is distinguishable from an explicit zero value/empty
+// string.
 type importCardJSON struct {
+	Era      *string `json:"era"`
 	Year     *int    `json:"year"`
 	Event    *string `json:"event"`
 	Category *string `json:"category"`
 }
 
 // ParseCardImportJSON strictly parses and validates a card-import payload:
-// a JSON array of {"year": int, "event": string, "category": string}
-// objects, and nothing else. Any unknown field, wrong type, missing
-// required field, or out-of-range value is rejected outright rather than
-// silently ignored or coerced — this is untrusted input (an uploaded file
-// or the embedded seed data) headed straight for a SQL INSERT and for
-// html/template rendering, so the parser is deliberately strict.
+// a JSON array of {"era": string, "year": int, "event": string, "category":
+// string} objects, and nothing else. Any unknown field, wrong type, or
+// missing required field is rejected outright rather than silently ignored
+// or coerced — this is untrusted input (an uploaded file or the embedded
+// seed data) headed straight for a SQL INSERT and for html/template
+// rendering, so the parser is deliberately strict. "era" and "category"
+// names themselves are validated against the target deck's own allow lists
+// by the caller (resolveEras/resolveCategoryIds) — this function only
+// checks shape.
 func ParseCardImportJSON(data []byte) ([]DefaultDeckCard, error) {
 	if len(data) == 0 {
 		return nil, errors.New("no data provided")
@@ -59,7 +72,7 @@ func ParseCardImportJSON(data []byte) ([]DefaultDeckCard, error) {
 
 	var raw []importCardJSON
 	if err := decoder.Decode(&raw); err != nil {
-		return nil, errors.New(`invalid JSON: expected an array of {"year": number, "event": string, "category": string} objects`)
+		return nil, errors.New(`invalid JSON: expected an array of {"era": string, "year": number, "event": string, "category": string} objects`)
 	}
 	if decoder.More() {
 		return nil, errors.New("invalid JSON: unexpected trailing data after the array")
@@ -75,11 +88,19 @@ func ParseCardImportJSON(data []byte) ([]DefaultDeckCard, error) {
 	seenText := make(map[string]bool, len(raw))
 	cards := make([]DefaultDeckCard, 0, len(raw))
 	for i, r := range raw {
+		if r.Era == nil {
+			return nil, fmt.Errorf(`entry %d: "era" is required`, i)
+		}
+		era := strings.TrimSpace(*r.Era)
+		if era == "" {
+			return nil, fmt.Errorf(`entry %d: "era" cannot be blank`, i)
+		}
+		if len(era) > maxImportEraLen {
+			return nil, fmt.Errorf(`entry %d: "era" exceeds %d characters`, i, maxImportEraLen)
+		}
+
 		if r.Year == nil {
 			return nil, fmt.Errorf(`entry %d: "year" is required`, i)
-		}
-		if *r.Year < minImportYear || *r.Year > maxImportYear {
-			return nil, fmt.Errorf("entry %d: year %d is out of the allowed range (%d to %d)", i, *r.Year, minImportYear, maxImportYear)
 		}
 
 		if r.Event == nil {
@@ -108,7 +129,7 @@ func ParseCardImportJSON(data []byte) ([]DefaultDeckCard, error) {
 			return nil, fmt.Errorf(`entry %d: "category" exceeds %d characters`, i, maxImportCategoryLen)
 		}
 
-		cards = append(cards, DefaultDeckCard{Year: *r.Year, Event: event, Category: category})
+		cards = append(cards, DefaultDeckCard{Era: era, RelativeYear: *r.Year, Event: event, Category: category})
 	}
 
 	return cards, nil
@@ -126,6 +147,56 @@ func distinctCategoryNames(cards []DefaultDeckCard) []string {
 		}
 	}
 	return names
+}
+
+// distinctEraNames is distinctCategoryNames's era counterpart.
+func distinctEraNames(cards []DefaultDeckCard) []string {
+	seen := make(map[string]bool)
+	names := make([]string, 0)
+	for _, c := range cards {
+		if !seen[c.Era] {
+			seen[c.Era] = true
+			names = append(names, c.Era)
+		}
+	}
+	return names
+}
+
+// resolveEras maps each era name found in a parsed import to its Era,
+// scoped to one timeline, returning an error naming the first era that
+// isn't defined for that timeline — the same "reject the whole import"
+// treatment resolveCategoryIds gives an unknown category.
+func resolveEras(timelineId uuid.UUID, names []string) (map[string]Era, error) {
+	eras, err := GetErasForTimeline(timelineId)
+	if err != nil {
+		return nil, err
+	}
+	byName := make(map[string]Era, len(eras))
+	for _, e := range eras {
+		byName[e.Name] = e
+	}
+
+	result := make(map[string]Era, len(names))
+	for _, name := range names {
+		era, ok := byName[name]
+		if !ok {
+			return nil, fmt.Errorf("era %q is not defined for this deck's timeline; an admin must create it first", name)
+		}
+		result[name] = era
+	}
+	return result, nil
+}
+
+// absoluteYearInEraBounds converts a year-within-era into the absolute
+// CARD_YEAR, rejecting it if the result falls outside that era's own
+// range — the same bounds check apiCard.resolveYear applies to manual
+// entry, so import can't silently misfile a card under the wrong era.
+func absoluteYearInEraBounds(era Era, relativeYear int) (int, error) {
+	absolute := AbsoluteYearFromEra(era, relativeYear)
+	if !EraContainsAbsoluteYear(absolute, era) {
+		return 0, fmt.Errorf("year %d is outside %s's range", relativeYear, era.Name)
+	}
+	return absolute, nil
 }
 
 // SeedCategoriesIfEmpty seeds the predefined category list from the distinct
@@ -159,7 +230,7 @@ func SeedCategoriesIfEmpty(seedJSON []byte) error {
 	}
 
 	for _, name := range distinctCategoryNames(cards) {
-		if _, err := CreateCategory(name); err != nil {
+		if _, err := CreateCategory(DefaultTimelineId, name); err != nil {
 			return err
 		}
 	}
@@ -186,7 +257,16 @@ func SeedDefaultDeckIfEmpty(seedJSON []byte) error {
 		return errors.New("failed to parse default deck seed data")
 	}
 
-	categoryIds, err := resolveCategoryIds(distinctCategoryNames(cards))
+	// The new deck has no explicit timeline assignment yet, so it lazily
+	// belongs to DefaultTimelineId (Real Life) — the same eras and
+	// categories SeedDefaultTimelineIfEmpty/SeedCategoriesIfEmpty must have
+	// already seeded.
+	categoryIds, err := resolveCategoryIds(DefaultTimelineId, distinctCategoryNames(cards))
+	if err != nil {
+		return err
+	}
+
+	eras, err := resolveEras(DefaultTimelineId, distinctEraNames(cards))
 	if err != nil {
 		return err
 	}
@@ -197,8 +277,12 @@ func SeedDefaultDeckIfEmpty(seedJSON []byte) error {
 	}
 
 	for _, c := range cards {
+		absoluteYear, err := absoluteYearInEraBounds(eras[c.Era], c.RelativeYear)
+		if err != nil {
+			return fmt.Errorf("card %q: %w", c.Event, err)
+		}
 		categoryId := uuid.NullUUID{UUID: categoryIds[c.Category], Valid: true}
-		if _, err := CreateCard(deckId, c.Event, sql.NullInt64{Int64: int64(c.Year), Valid: true}, categoryId); err != nil {
+		if _, err := CreateCard(deckId, c.Event, sql.NullInt64{Int64: int64(absoluteYear), Valid: true}, categoryId); err != nil {
 			return err
 		}
 	}
@@ -217,7 +301,7 @@ func BackfillDefaultDeckCategories(seedJSON []byte) error {
 		return errors.New("failed to parse default deck seed data for backfill")
 	}
 
-	categoryIds, err := resolveCategoryIds(distinctCategoryNames(cards))
+	categoryIds, err := resolveCategoryIds(DefaultTimelineId, distinctCategoryNames(cards))
 	if err != nil {
 		return err
 	}
@@ -237,17 +321,18 @@ func BackfillDefaultDeckCategories(seedJSON []byte) error {
 	return nil
 }
 
-// resolveCategoryIds maps each category name to its id, returning an error
-// naming the first category that isn't in the predefined list.
-func resolveCategoryIds(names []string) (map[string]uuid.UUID, error) {
+// resolveCategoryIds maps each category name to its id within timelineId,
+// returning an error naming the first category that isn't defined for that
+// timeline.
+func resolveCategoryIds(timelineId uuid.UUID, names []string) (map[string]uuid.UUID, error) {
 	ids := make(map[string]uuid.UUID, len(names))
 	for _, name := range names {
-		id, err := GetCategoryId(name)
+		id, err := GetCategoryIdForTimeline(timelineId, name)
 		if err != nil {
 			return nil, err
 		}
 		if id == uuid.Nil {
-			return nil, fmt.Errorf("category %q is not in the predefined list; an admin must create it first", name)
+			return nil, fmt.Errorf("category %q is not defined for this deck's timeline; an admin must create it first", name)
 		}
 		ids[name] = id
 	}
@@ -255,11 +340,16 @@ func resolveCategoryIds(names []string) (map[string]uuid.UUID, error) {
 }
 
 // ImportCardsIntoDeck validates a card-import JSON payload and inserts the
-// cards into an existing deck. Every category referenced must already exist in
-// the predefined list, otherwise the whole import is rejected (naming the
-// missing category). Entries whose event text already exists in the deck are
-// skipped (CARD has a UNIQUE(DECK_ID, TEXT) constraint) rather than aborting
-// the whole import, so re-uploading the same file is a no-op for cards already
+// cards into an existing deck. Every category and era referenced must
+// already be defined for the deck's own timeline — otherwise the whole
+// import is rejected (naming the missing category/era). Each entry's year
+// must also actually
+// fall within its named era's own range once converted, or the whole
+// import is rejected (see absoluteYearInEraBounds) — an era name alone
+// isn't enough to silently misfile a card outside where it belongs.
+// Entries whose event text already exists in the deck are skipped (CARD
+// has a UNIQUE(DECK_ID, TEXT) constraint) rather than aborting the whole
+// import, so re-uploading the same file is a no-op for cards already
 // present.
 func ImportCardsIntoDeck(deckId uuid.UUID, data []byte) (imported int, skipped int, err error) {
 	cards, err := ParseCardImportJSON(data)
@@ -267,7 +357,16 @@ func ImportCardsIntoDeck(deckId uuid.UUID, data []byte) (imported int, skipped i
 		return 0, 0, err
 	}
 
-	categoryIds, err := resolveCategoryIds(distinctCategoryNames(cards))
+	timelineId, err := GetDeckTimelineId(deckId)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	categoryIds, err := resolveCategoryIds(timelineId, distinctCategoryNames(cards))
+	if err != nil {
+		return 0, 0, err
+	}
+	eras, err := resolveEras(timelineId, distinctEraNames(cards))
 	if err != nil {
 		return 0, 0, err
 	}
@@ -282,8 +381,12 @@ func ImportCardsIntoDeck(deckId uuid.UUID, data []byte) (imported int, skipped i
 			skipped++
 			continue
 		}
+		absoluteYear, err := absoluteYearInEraBounds(eras[c.Era], c.RelativeYear)
+		if err != nil {
+			return imported, skipped, fmt.Errorf("card %q: %w", c.Event, err)
+		}
 		categoryId := uuid.NullUUID{UUID: categoryIds[c.Category], Valid: true}
-		if _, err := CreateCard(deckId, c.Event, sql.NullInt64{Int64: int64(c.Year), Valid: true}, categoryId); err != nil {
+		if _, err := CreateCard(deckId, c.Event, sql.NullInt64{Int64: int64(absoluteYear), Valid: true}, categoryId); err != nil {
 			return imported, skipped, err
 		}
 		imported++

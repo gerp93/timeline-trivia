@@ -15,6 +15,17 @@
     </div>
 </div>
 
+<form method="get" class="form-input" style="margin-bottom: 1em;">
+    <label for="timelineSelect">Timeline</label>
+    <select id="timelineSelect" name="timeline" onchange="this.form.submit()">
+        <option value="" {{if isNilUUID .SelectedTimeline}}selected{{end}}>Overall</option>
+        {{range .Timelines}}
+        <option value="{{.Id}}" {{if eq (printf "%s" .Id) (printf "%s" $.SelectedTimeline)}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+    </select>
+</form>
+
+{{if isNilUUID .SelectedTimeline}}
 <h3>Most-Played Decades</h3>
 <p>Decades whose events come up most often to guess, across the decks you can see.</p>
 {{if eq (len .TopDecades) 0}}
@@ -36,5 +47,29 @@
         {{end}}
     </tbody>
 </table>
+{{end}}
+{{else}}
+<h3>Most-Played Eras</h3>
+<p>Eras whose events come up most often to guess, across the decks you can see.</p>
+{{if eq (len .TopEras) 0}}
+<p>No cards have been played yet.</p>
+{{else}}
+<table>
+    <thead>
+        <tr>
+            <th>Era</th>
+            <th>Times Played</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{range .TopEras}}
+        <tr>
+            <td>{{.Label}}</td>
+            <td>{{.DrawCount}}</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{end}}
 {{end}}
 {{end}}

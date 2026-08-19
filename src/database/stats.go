@@ -5,14 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 
 	"github.com/google/uuid"
 )
 
-// MinDecadeGuesses is how many guesses a user must have made on cards in a
-// decade before that decade's success rate is considered statistically
-// meaningful and shown in the "most/least successful decade" rankings.
-const MinDecadeGuesses = 10
+// MinBucketGuesses is how many guesses a user must have made on cards in a
+// decade or era before that bucket's success rate is considered
+// statistically meaningful and shown in the "most/least successful"
+// rankings.
+const MinBucketGuesses = 10
 
 // decadeExpr buckets a year column into its decade. It truncates toward zero
 // rather than using FLOOR, which matters only for B.C.E. (negative) years:
@@ -36,6 +38,43 @@ const readableDeckPredicate = `
 		OR EXISTS (SELECT 1 FROM USER U WHERE U.ID = ? AND U.IS_ADMIN = 1)
 	)
 `
+
+// appendTimelineFilter appends a timeline-scoping predicate to sqlString and
+// its args, restricting to one timeline; a uuid.Nil timelineId is a no-op
+// ("Overall" — today's existing, unfiltered behavior). Assumes the query
+// already has `LEFT JOIN TIMELINE_TRIVIA_DECK_TIMELINE AS DT ON DT.DECK_ID =
+// D.ID` — a deck with no explicit row there belongs to DefaultTimelineId,
+// the same lazy-default convention GetDeckTimelineId uses.
+func appendTimelineFilter(sqlString string, args []interface{}, timelineId uuid.UUID) (string, []interface{}) {
+	if timelineId == uuid.Nil {
+		return sqlString, args
+	}
+	return sqlString + " AND COALESCE(DT.TIMELINE_TRIVIA_TIMELINE_ID, ?) = ?", append(args, DefaultTimelineId, timelineId)
+}
+
+// appendEraFilter appends a predicate restricting a query's snapshotted
+// LG.CARD_YEAR column to one era's [FromYear, ToYear] range (an unset bound
+// is open-ended); a uuid.Nil eraId is a no-op (no further narrowing beyond
+// whatever timeline filter is already applied). Only meaningful alongside
+// LOG_GUESS-based queries, which alias that table LG.
+func appendEraFilter(sqlString string, args []interface{}, eraId uuid.UUID) (string, []interface{}, error) {
+	if eraId == uuid.Nil {
+		return sqlString, args, nil
+	}
+	era, err := GetEra(eraId)
+	if err != nil {
+		return sqlString, args, err
+	}
+	if era.FromYear.Valid {
+		sqlString += " AND LG.CARD_YEAR >= ?"
+		args = append(args, era.FromYear.Int64)
+	}
+	if era.ToYear.Valid {
+		sqlString += " AND LG.CARD_YEAR <= ?"
+		args = append(args, era.ToYear.Int64)
+	}
+	return sqlString, args, nil
+}
 
 // UserCanReadDeck reports whether a viewer may read a deck (public, granted, or
 // admin, and not hidden) — used to gate the per-card stats page.
@@ -61,8 +100,8 @@ func UserCanReadDeck(viewerId uuid.UUID, deckId uuid.UUID) (bool, error) {
 	return count > 0, nil
 }
 
-// StatUser is a user's overall play totals (scoped to the viewer's readable
-// decks, except GamesWon which is global — a win isn't tied to a deck).
+// StatUser is a user's overall play totals, scoped to the viewer's readable
+// decks (and, per GetUserStatTotals's params, optionally to one timeline).
 type StatUser struct {
 	UserId         uuid.UUID
 	Name           string
@@ -95,7 +134,7 @@ func (d DecadeStat) Rate() float64 {
 // Qualified reports whether this decade has enough guesses for its success
 // rate to be considered statistically meaningful.
 func (d DecadeStat) Qualified() bool {
-	return d.Attempts >= MinDecadeGuesses
+	return d.Attempts >= MinBucketGuesses
 }
 
 // Label renders the decade for display, e.g. "1920s" or "50s B.C.E".
@@ -121,8 +160,11 @@ func (c CategoryStat) Rate() float64 {
 }
 
 // GetUserStatTotals returns a user's overall totals, scoped to the viewer's
-// readable decks (games won is global).
-func GetUserStatTotals(viewerId uuid.UUID, targetId uuid.UUID) (StatUser, error) {
+// readable decks. timelineId (uuid.Nil = "Overall", no filter) additionally
+// scopes both guesses and games won to one timeline; eraId (uuid.Nil = whole
+// timeline) further narrows guesses to one era within it — games won isn't
+// further narrowed by era, a win isn't tied to a single card year.
+func GetUserStatTotals(viewerId uuid.UUID, targetId uuid.UUID, timelineId uuid.UUID, eraId uuid.UUID) (StatUser, error) {
 	var result StatUser
 	result.UserId = targetId
 
@@ -133,9 +175,17 @@ func GetUserStatTotals(viewerId uuid.UUID, targetId uuid.UUID) (StatUser, error)
 		FROM TIMELINE_TRIVIA_LOG_GUESS AS LG
 			INNER JOIN CARD AS C ON C.ID = LG.CARD_ID
 			INNER JOIN DECK AS D ON D.ID = C.DECK_ID
+			LEFT JOIN TIMELINE_TRIVIA_DECK_TIMELINE AS DT ON DT.DECK_ID = D.ID
 		WHERE LG.USER_ID = ?
 			AND ` + readableDeckPredicate
-	rows, err := query(totalsSQL, targetId, viewerId, viewerId)
+	totalsArgs := []interface{}{targetId, viewerId, viewerId}
+	totalsSQL, totalsArgs = appendTimelineFilter(totalsSQL, totalsArgs, timelineId)
+	totalsSQL, totalsArgs, err := appendEraFilter(totalsSQL, totalsArgs, eraId)
+	if err != nil {
+		return result, err
+	}
+
+	rows, err := query(totalsSQL, totalsArgs...)
 	if err != nil {
 		return result, err
 	}
@@ -149,7 +199,12 @@ func GetUserStatTotals(viewerId uuid.UUID, targetId uuid.UUID) (StatUser, error)
 	rows.Close()
 
 	winsSQL := `SELECT COUNT(*) FROM TIMELINE_TRIVIA_LOG_WIN WHERE USER_ID = ?`
-	winRows, err := query(winsSQL, targetId)
+	winArgs := []interface{}{targetId}
+	if timelineId != uuid.Nil {
+		winsSQL += ` AND TIMELINE_TRIVIA_TIMELINE_ID = ?`
+		winArgs = append(winArgs, timelineId)
+	}
+	winRows, err := query(winsSQL, winArgs...)
 	if err != nil {
 		return result, err
 	}
@@ -165,7 +220,9 @@ func GetUserStatTotals(viewerId uuid.UUID, targetId uuid.UUID) (StatUser, error)
 }
 
 // GetUserDecadeStats returns a user's per-decade guessing record over the
-// viewer's readable decks, ordered by decade.
+// viewer's readable decks, ordered by decade. This is the "Overall"
+// breakdown (no timeline filter) — see GetUserEraStats for the per-timeline
+// equivalent shown once a specific timeline is selected.
 func GetUserDecadeStats(viewerId uuid.UUID, targetId uuid.UUID) ([]DecadeStat, error) {
 	sqlString := `
 		SELECT
@@ -198,10 +255,104 @@ func GetUserDecadeStats(viewerId uuid.UUID, targetId uuid.UUID) ([]DecadeStat, e
 	return result, nil
 }
 
+// EraStat is a user's guessing record for one era of a timeline — the
+// per-timeline counterpart to DecadeStat, shown once a specific timeline is
+// selected instead of the Overall decade breakdown.
+type EraStat struct {
+	EraId        uuid.UUID
+	Name         string
+	Abbreviation string
+	Attempts     int
+	Correct      int
+}
+
+func (e EraStat) Rate() float64 {
+	if e.Attempts == 0 {
+		return 0
+	}
+	return float64(e.Correct) / float64(e.Attempts) * 100
+}
+
+// Qualified reports whether this era has enough guesses for its success
+// rate to be considered statistically meaningful.
+func (e EraStat) Qualified() bool {
+	return e.Attempts >= MinBucketGuesses
+}
+
+// Label renders the era for display, e.g. "Third Age (T.A.)".
+func (e EraStat) Label() string {
+	if e.Abbreviation != "" {
+		return e.Name + " (" + e.Abbreviation + ")"
+	}
+	return e.Name
+}
+
+// GetUserEraStats returns a user's per-era guessing record within one
+// timeline, in the timeline's own earliest-to-latest order. Bucketing
+// happens in Go (via FindEraForYear) rather than SQL, since era ranges are
+// admin-defined per timeline and don't reduce to one formula the way
+// decades do. A guess whose year falls in no era is omitted from the
+// result — GetUserStatTotals's overall count is unaffected, only this
+// breakdown. Only eras with at least one guess are returned, matching
+// GetUserDecadeStats's GROUP BY behavior.
+func GetUserEraStats(viewerId uuid.UUID, targetId uuid.UUID, timelineId uuid.UUID) ([]EraStat, error) {
+	eras, err := GetErasForTimeline(timelineId)
+	if err != nil {
+		return nil, err
+	}
+
+	sqlString := `
+		SELECT LG.CARD_YEAR, LG.IS_CORRECT
+		FROM TIMELINE_TRIVIA_LOG_GUESS AS LG
+			INNER JOIN CARD AS C ON C.ID = LG.CARD_ID
+			INNER JOIN DECK AS D ON D.ID = C.DECK_ID
+			LEFT JOIN TIMELINE_TRIVIA_DECK_TIMELINE AS DT ON DT.DECK_ID = D.ID
+		WHERE LG.USER_ID = ?
+			AND ` + readableDeckPredicate + `
+			AND COALESCE(DT.TIMELINE_TRIVIA_TIMELINE_ID, ?) = ?
+	`
+	rows, err := query(sqlString, targetId, viewerId, viewerId, DefaultTimelineId, timelineId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := make(map[uuid.UUID]*EraStat, len(eras))
+	for _, e := range eras {
+		counts[e.Id] = &EraStat{EraId: e.Id, Name: e.Name, Abbreviation: e.Abbreviation}
+	}
+	for rows.Next() {
+		var year int
+		var correct bool
+		if err := rows.Scan(&year, &correct); err != nil {
+			log.Println(err)
+			return nil, errors.New("failed to scan row in query results")
+		}
+		era, ok := FindEraForYear(year, eras)
+		if !ok {
+			continue
+		}
+		stat := counts[era.Id]
+		stat.Attempts++
+		if correct {
+			stat.Correct++
+		}
+	}
+
+	result := make([]EraStat, 0, len(eras))
+	for _, e := range eras {
+		if stat := counts[e.Id]; stat.Attempts > 0 {
+			result = append(result, *stat)
+		}
+	}
+	return result, nil
+}
+
 // GetUserCategoryStats returns a user's per-category guessing record over the
 // viewer's readable decks, ordered by category name. Cards with no category
-// are excluded.
-func GetUserCategoryStats(viewerId uuid.UUID, targetId uuid.UUID) ([]CategoryStat, error) {
+// are excluded. timelineId/eraId scope it the same way GetUserStatTotals
+// does.
+func GetUserCategoryStats(viewerId uuid.UUID, targetId uuid.UUID, timelineId uuid.UUID, eraId uuid.UUID) ([]CategoryStat, error) {
 	sqlString := `
 		SELECT
 			TC.NAME,
@@ -211,12 +362,20 @@ func GetUserCategoryStats(viewerId uuid.UUID, targetId uuid.UUID) ([]CategorySta
 			INNER JOIN CARD AS C ON C.ID = LG.CARD_ID
 			INNER JOIN DECK AS D ON D.ID = C.DECK_ID
 			INNER JOIN TIMELINE_TRIVIA_CATEGORY AS TC ON TC.ID = C.CATEGORY_ID
+			LEFT JOIN TIMELINE_TRIVIA_DECK_TIMELINE AS DT ON DT.DECK_ID = D.ID
 		WHERE LG.USER_ID = ?
-			AND ` + readableDeckPredicate + `
+			AND ` + readableDeckPredicate
+	args := []interface{}{targetId, viewerId, viewerId}
+	sqlString, args = appendTimelineFilter(sqlString, args, timelineId)
+	sqlString, args, err := appendEraFilter(sqlString, args, eraId)
+	if err != nil {
+		return nil, err
+	}
+	sqlString += `
 		GROUP BY TC.ID, TC.NAME
 		ORDER BY TC.NAME
 	`
-	rows, err := query(sqlString, targetId, viewerId, viewerId)
+	rows, err := query(sqlString, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +411,8 @@ type UserTimeoutStats struct {
 // GetUserTimeoutStats returns how often a user ran out of time, broken down by
 // the turn-timer setting in force for each occurrence, over the viewer's
 // readable decks (same scoping as the guess stats it sits beside).
-func GetUserTimeoutStats(viewerId uuid.UUID, targetId uuid.UUID) (UserTimeoutStats, error) {
+// timelineId (uuid.Nil = "Overall") scopes it to one timeline.
+func GetUserTimeoutStats(viewerId uuid.UUID, targetId uuid.UUID, timelineId uuid.UUID) (UserTimeoutStats, error) {
 	var result UserTimeoutStats
 
 	sqlString := `
@@ -262,12 +422,16 @@ func GetUserTimeoutStats(viewerId uuid.UUID, targetId uuid.UUID) (UserTimeoutSta
 		FROM TIMELINE_TRIVIA_LOG_TIMEOUT AS LT
 			INNER JOIN CARD AS C ON C.ID = LT.CARD_ID
 			INNER JOIN DECK AS D ON D.ID = C.DECK_ID
+			LEFT JOIN TIMELINE_TRIVIA_DECK_TIMELINE AS DT ON DT.DECK_ID = D.ID
 		WHERE LT.USER_ID = ?
-			AND ` + readableDeckPredicate + `
+			AND ` + readableDeckPredicate
+	args := []interface{}{targetId, viewerId, viewerId}
+	sqlString, args = appendTimelineFilter(sqlString, args, timelineId)
+	sqlString += `
 		GROUP BY LT.TIMER_SECONDS
 		ORDER BY LT.TIMER_SECONDS
 	`
-	rows, err := query(sqlString, targetId, viewerId, viewerId)
+	rows, err := query(sqlString, args...)
 	if err != nil {
 		return result, err
 	}
@@ -307,28 +471,42 @@ func (e LeaderboardEntry) Accuracy() float64 {
 
 // GetLeaderboard returns every user with any recorded play, ranked by games
 // won then correct guesses. Guess counts are restricted to public decks.
-func GetLeaderboard() ([]LeaderboardEntry, error) {
+// timelineId (uuid.Nil = "Overall") scopes both games won and guesses to one
+// timeline.
+func GetLeaderboard(timelineId uuid.UUID) ([]LeaderboardEntry, error) {
+	winsFilter := ""
+	guessFilter := ""
+	args := make([]interface{}, 0, 5)
+	if timelineId != uuid.Nil {
+		winsFilter = "AND LW.TIMELINE_TRIVIA_TIMELINE_ID = ?"
+		guessFilter = "AND COALESCE(DT.TIMELINE_TRIVIA_TIMELINE_ID, ?) = ?"
+	}
+
 	sqlString := `
 		SELECT * FROM (
 			SELECT
 				U.ID AS USER_ID,
 				U.NAME AS NAME,
-				(SELECT COUNT(*) FROM TIMELINE_TRIVIA_LOG_WIN AS LW WHERE LW.USER_ID = U.ID) AS GAMES_WON,
+				(SELECT COUNT(*) FROM TIMELINE_TRIVIA_LOG_WIN AS LW WHERE LW.USER_ID = U.ID ` + winsFilter + `) AS GAMES_WON,
 				(
 					SELECT COUNT(*)
 					FROM TIMELINE_TRIVIA_LOG_GUESS AS LG
 						INNER JOIN CARD AS C ON C.ID = LG.CARD_ID
 						INNER JOIN DECK AS D ON D.ID = C.DECK_ID
+						LEFT JOIN TIMELINE_TRIVIA_DECK_TIMELINE AS DT ON DT.DECK_ID = D.ID
 					WHERE LG.USER_ID = U.ID
 						AND D.IS_PUBLIC_READONLY = 1
+						` + guessFilter + `
 				) AS TOTAL_GUESSES,
 				(
 					SELECT COALESCE(SUM(LG.IS_CORRECT), 0)
 					FROM TIMELINE_TRIVIA_LOG_GUESS AS LG
 						INNER JOIN CARD AS C ON C.ID = LG.CARD_ID
 						INNER JOIN DECK AS D ON D.ID = C.DECK_ID
+						LEFT JOIN TIMELINE_TRIVIA_DECK_TIMELINE AS DT ON DT.DECK_ID = D.ID
 					WHERE LG.USER_ID = U.ID
 						AND D.IS_PUBLIC_READONLY = 1
+						` + guessFilter + `
 				) AS CORRECT_GUESSES
 			FROM USER AS U
 		) AS T
@@ -336,7 +514,10 @@ func GetLeaderboard() ([]LeaderboardEntry, error) {
 		ORDER BY T.GAMES_WON DESC, T.CORRECT_GUESSES DESC, T.NAME
 		LIMIT 100
 	`
-	rows, err := query(sqlString)
+	if timelineId != uuid.Nil {
+		args = append(args, timelineId, DefaultTimelineId, timelineId, DefaultTimelineId, timelineId)
+	}
+	rows, err := query(sqlString, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -441,7 +622,9 @@ func (t TopDecade) Label() string {
 }
 
 // GetTopDecades returns the decades whose cards come up to be guessed most
-// often, over the viewer's readable decks.
+// often, over the viewer's readable decks. This is the "Overall" breakdown
+// (no timeline filter) — see GetTopErasForTimeline for the per-timeline
+// equivalent shown once a specific timeline is selected.
 func GetTopDecades(viewerId uuid.UUID) ([]TopDecade, error) {
 	sqlString := `
 		SELECT
@@ -470,6 +653,80 @@ func GetTopDecades(viewerId uuid.UUID) ([]TopDecade, error) {
 			return nil, errors.New("failed to scan row in query results")
 		}
 		result = append(result, t)
+	}
+	return result, nil
+}
+
+// TopEra is one row of the "top eras that come up to be guessed" aggregate
+// for one timeline, by draw volume — the per-timeline counterpart to
+// TopDecade.
+type TopEra struct {
+	EraId        uuid.UUID
+	Name         string
+	Abbreviation string
+	DrawCount    int
+}
+
+// Label renders the era for display, e.g. "Third Age (T.A.)".
+func (t TopEra) Label() string {
+	if t.Abbreviation != "" {
+		return t.Name + " (" + t.Abbreviation + ")"
+	}
+	return t.Name
+}
+
+// GetTopErasForTimeline returns a timeline's eras whose cards come up to be
+// guessed most often, over the viewer's readable decks, ranked by draw
+// count descending. Bucketing happens in Go (via FindEraForYear), same
+// rationale as GetUserEraStats.
+func GetTopErasForTimeline(viewerId uuid.UUID, timelineId uuid.UUID) ([]TopEra, error) {
+	eras, err := GetErasForTimeline(timelineId)
+	if err != nil {
+		return nil, err
+	}
+
+	sqlString := `
+		SELECT C.CARD_YEAR
+		FROM TIMELINE_TRIVIA_LOG_CARD AS LC
+			INNER JOIN CARD AS C ON C.ID = LC.CARD_ID
+			INNER JOIN DECK AS D ON D.ID = C.DECK_ID
+			LEFT JOIN TIMELINE_TRIVIA_DECK_TIMELINE AS DT ON DT.DECK_ID = D.ID
+		WHERE LC.EVENT_TYPE = 'DRAW'
+			AND ` + readableDeckPredicate + `
+			AND COALESCE(DT.TIMELINE_TRIVIA_TIMELINE_ID, ?) = ?
+	`
+	rows, err := query(sqlString, viewerId, viewerId, DefaultTimelineId, timelineId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := make(map[uuid.UUID]*TopEra, len(eras))
+	for _, e := range eras {
+		counts[e.Id] = &TopEra{EraId: e.Id, Name: e.Name, Abbreviation: e.Abbreviation}
+	}
+	for rows.Next() {
+		var year int
+		if err := rows.Scan(&year); err != nil {
+			log.Println(err)
+			return nil, errors.New("failed to scan row in query results")
+		}
+		era, ok := FindEraForYear(year, eras)
+		if !ok {
+			continue
+		}
+		counts[era.Id].DrawCount++
+	}
+
+	result := make([]TopEra, 0, len(eras))
+	for _, e := range eras {
+		if t := counts[e.Id]; t.DrawCount > 0 {
+			result = append(result, *t)
+		}
+	}
+	sort.SliceStable(result, func(i, j int) bool { return result[i].DrawCount > result[j].DrawCount })
+	if len(result) > 15 {
+		result = result[:15]
 	}
 	return result, nil
 }
