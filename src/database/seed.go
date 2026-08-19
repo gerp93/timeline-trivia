@@ -24,16 +24,17 @@ const (
 	maxImportCards       = 1000
 	maxImportEventLen    = 510 // CARD.TEXT VARCHAR(510)
 	maxImportCategoryLen = 255
-	maxImportEraLen      = 255 // TIMELINE_TRIVIA_ERA.NAME VARCHAR(255)
+	maxImportEraLen      = 255 // TIMELINE_TRIVIA_ERA.NAME VARCHAR(255) — the ceiling for either an abbreviation (usually much shorter) or a full-name fallback (see resolveEras)
 )
 
 // DefaultDeckCard is one entry in a card-import JSON payload, after
 // validation. Category is carried through and required — cards are placed
-// into one of the predefined TIMELINE_TRIVIA_CATEGORY entries. RelativeYear
-// is the year *within* the named Era (not the absolute CARD_YEAR) — the
-// same "pick an era, type the in-era year" shape the manual create/edit
-// card dialogs use, resolved against the target deck's timeline by
-// resolveEras/absoluteYearInEraBounds.
+// into one of the predefined TIMELINE_TRIVIA_CATEGORY entries. Era is the
+// era's *abbreviation* (e.g. "B.C.E", "BBY"), not its full name — see
+// resolveEras. RelativeYear is the year *within* that Era (not the absolute
+// CARD_YEAR) — the same "pick an era, type the in-era year" shape the
+// manual create/edit card dialogs use, resolved against the target deck's
+// timeline by resolveEras/absoluteYearInEraBounds.
 type DefaultDeckCard struct {
 	Era          string
 	RelativeYear int
@@ -44,7 +45,9 @@ type DefaultDeckCard struct {
 // importCardJSON is the strict on-the-wire shape: exactly {era, year,
 // event, category}, nothing more, nothing less. Pointer fields so a
 // missing key (nil) is distinguishable from an explicit zero value/empty
-// string.
+// string. "era" is the era's abbreviation, not its full name (see
+// resolveEras) — still called "era" on the wire since it still identifies
+// one.
 type importCardJSON struct {
 	Era      *string `json:"era"`
 	Year     *int    `json:"year"`
@@ -58,10 +61,10 @@ type importCardJSON struct {
 // missing required field is rejected outright rather than silently ignored
 // or coerced — this is untrusted input (an uploaded file or the embedded
 // seed data) headed straight for a SQL INSERT and for html/template
-// rendering, so the parser is deliberately strict. "era" and "category"
-// names themselves are validated against the target deck's own allow lists
-// by the caller (resolveEras/resolveCategoryIds) — this function only
-// checks shape.
+// rendering, so the parser is deliberately strict. "era" (matched by
+// abbreviation, not full name) and "category" are validated against the
+// target deck's own allow lists by the caller (resolveEras/
+// resolveCategoryIds) — this function only checks shape.
 func ParseCardImportJSON(data []byte) ([]DefaultDeckCard, error) {
 	if len(data) == 0 {
 		return nil, errors.New("no data provided")
@@ -162,27 +165,37 @@ func distinctEraNames(cards []DefaultDeckCard) []string {
 	return names
 }
 
-// resolveEras maps each era name found in a parsed import to its Era,
-// scoped to one timeline, returning an error naming the first era that
+// resolveEras maps each era code found in a parsed import to its Era,
+// scoped to one timeline, returning an error naming the first code that
 // isn't defined for that timeline — the same "reject the whole import"
-// treatment resolveCategoryIds gives an unknown category.
-func resolveEras(timelineId uuid.UUID, names []string) (map[string]Era, error) {
+// treatment resolveCategoryIds gives an unknown category. Matched by
+// abbreviation rather than full name — a JSON import is naturally
+// code-like ("B.C.E", "BBY"), not prose, and a full era name can be
+// long/awkward to type by hand. An era with no abbreviation set (e.g. the
+// seeded "Common Era", deliberately left unabbreviated so its years render
+// with no suffix — see FormatYearInEras) falls back to being matched by its
+// full name instead, since it has nothing shorter to offer.
+func resolveEras(timelineId uuid.UUID, codes []string) (map[string]Era, error) {
 	eras, err := GetErasForTimeline(timelineId)
 	if err != nil {
 		return nil, err
 	}
-	byName := make(map[string]Era, len(eras))
+	byCode := make(map[string]Era, len(eras))
 	for _, e := range eras {
-		byName[e.Name] = e
+		if e.Abbreviation != "" {
+			byCode[e.Abbreviation] = e
+		} else {
+			byCode[e.Name] = e
+		}
 	}
 
-	result := make(map[string]Era, len(names))
-	for _, name := range names {
-		era, ok := byName[name]
+	result := make(map[string]Era, len(codes))
+	for _, code := range codes {
+		era, ok := byCode[code]
 		if !ok {
-			return nil, fmt.Errorf("era %q is not defined for this deck's timeline; an admin must create it first", name)
+			return nil, fmt.Errorf("era %q is not defined for this deck's timeline (by abbreviation, or by full name for an era with no abbreviation); an admin must create it first", code)
 		}
-		result[name] = era
+		result[code] = era
 	}
 	return result, nil
 }

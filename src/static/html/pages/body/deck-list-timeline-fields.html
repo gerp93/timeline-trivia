@@ -1,0 +1,35 @@
+{{define "deck-create-extra-fields"}}
+<div class="form-input">
+    <label for="createDeckTimelineId">Timeline</label>
+    <select
+        id="createDeckTimelineId"
+        name="timelineId"
+        required="required"
+        autocomplete="off"
+    >
+        {{range .AssignableTimelines}}
+        <option value="{{.Id}}" {{if eq (printf "%s" .Id) (printf "%s" $.DefaultTimelineId)}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+    </select>
+</div>
+{{end}}
+{{define "deck-list-extra-filter"}}
+<label for="timelineFilter">Timeline:</label>
+<select
+    id="timelineFilter"
+    name="timeline"
+    autocomplete="off"
+    onchange="submitTableFilterForm()"
+>
+    <option value="">All Timelines</option>
+    {{range .Timelines}}
+    <option value="{{.Id}}" {{if eq (printf "%s" .Id) (printf "%s" $.SelectedTimelineId)}}selected{{end}}>{{.Name}}</option>
+    {{end}}
+</select>
+{{end}}
+{{define "deck-list-extra-column-header"}}
+<th>Timeline</th>
+{{end}}
+{{define "deck-list-extra-column"}}
+<td>{{.TimelineName}}</td>
+{{end}}

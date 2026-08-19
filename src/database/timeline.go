@@ -452,6 +452,49 @@ func GetDeckTimelineIds(deckIds []uuid.UUID) (map[uuid.UUID]uuid.UUID, error) {
 	return result, nil
 }
 
+// Sentinel errors ValidateTimelineAssignable returns for its
+// validation-rejection cases, distinguished from a genuine server/DB error
+// so a caller can respond 400 instead of 500 (via errors.Is) — the same
+// treatment DeleteEra's/DeleteCategoryReassigning's sentinels get.
+var ErrTimelineDoesNotExist = errors.New("selected timeline does not exist")
+var ErrTimelineHasNoEras = errors.New("this timeline has no eras yet; add at least one era before assigning decks to it")
+var ErrTimelineHasNoCategories = errors.New("this timeline has no categories yet; add at least one category before assigning decks to it")
+
+// ValidateTimelineAssignable checks that timelineId names a real timeline
+// with at least one era and at least one category — the invariant a deck
+// must satisfy before it can be assigned there, since a card can't be
+// authored without either. Shared by every path that assigns a deck to a
+// timeline (apiTimeline.SetDeckTimeline's HTTP handler, and
+// game.OnDeckCreated's deck-creation hook) so the rule can't drift between
+// them.
+func ValidateTimelineAssignable(timelineId uuid.UUID) error {
+	exists, err := TimelineExists(timelineId)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrTimelineDoesNotExist
+	}
+
+	eras, err := GetErasForTimeline(timelineId)
+	if err != nil {
+		return err
+	}
+	if len(eras) == 0 {
+		return ErrTimelineHasNoEras
+	}
+
+	categories, err := GetCategoriesForTimeline(timelineId)
+	if err != nil {
+		return err
+	}
+	if len(categories) == 0 {
+		return ErrTimelineHasNoCategories
+	}
+
+	return nil
+}
+
 // SetDeckTimeline assigns a deck to a timeline, replacing any previous
 // assignment.
 func SetDeckTimeline(deckId uuid.UUID, timelineId uuid.UUID) error {
@@ -532,6 +575,107 @@ func FormatYearInEras(year int, eras []Era) string {
 		magnitude = -magnitude
 	}
 	return strconv.Itoa(magnitude)
+}
+
+// DeckWithTimeline is one deck plus the timeline it belongs to, for the
+// /decks page's timeline column. Field names deliberately match
+// gsDatabase.DeckDetails's own (Id, Name, CardCount, IsPublicReadOnly) so
+// the shared decks.html chrome renders it identically to the framework's
+// own type without any changes there; TimelineId/TimelineName are only
+// referenced by this game's own deck-list-extra-column block.
+type DeckWithTimeline struct {
+	Id               uuid.UUID
+	Name             string
+	CardCount        int
+	IsPublicReadOnly bool
+	TimelineId       uuid.UUID
+	TimelineName     string
+}
+
+// SearchDecksWithTimeline is gsDatabase.SearchDecks plus each deck's
+// timeline, optionally narrowed to one timeline (timelineFilter ==
+// uuid.Nil means no filter, matching the "Nil = no filter" convention used
+// elsewhere, e.g. GetLeaderboard). A deck with no explicit
+// TIMELINE_TRIVIA_DECK_TIMELINE row lazily belongs to DefaultTimelineId,
+// the same convention countDecksForTimeline uses — the LEFT JOIN to
+// TIMELINE_TRIVIA_TIMELINE is keyed off that same COALESCE so its name
+// resolves correctly for those decks too.
+func SearchDecksWithTimeline(name string, timelineFilter uuid.UUID, page int) ([]DeckWithTimeline, error) {
+	name = "%" + name + "%"
+	if page < 1 {
+		page = 1
+	}
+
+	sqlString := `
+		SELECT
+			D.ID,
+			D.NAME,
+			(SELECT COUNT(*) FROM CARD AS C WHERE C.DECK_ID = D.ID) AS CARD_COUNT,
+			D.IS_PUBLIC_READONLY,
+			COALESCE(DT.TIMELINE_TRIVIA_TIMELINE_ID, ?) AS TIMELINE_ID,
+			T.NAME AS TIMELINE_NAME
+		FROM DECK AS D
+		LEFT JOIN TIMELINE_TRIVIA_DECK_TIMELINE AS DT ON DT.DECK_ID = D.ID
+		LEFT JOIN TIMELINE_TRIVIA_TIMELINE AS T ON T.ID = COALESCE(DT.TIMELINE_TRIVIA_TIMELINE_ID, ?)
+		WHERE D.NAME LIKE ?
+	`
+	args := []interface{}{DefaultTimelineId, DefaultTimelineId, name}
+	if timelineFilter != uuid.Nil {
+		sqlString += ` AND COALESCE(DT.TIMELINE_TRIVIA_TIMELINE_ID, ?) = ?`
+		args = append(args, DefaultTimelineId, timelineFilter)
+	}
+	sqlString += ` ORDER BY D.NAME LIMIT 10 OFFSET ?`
+	args = append(args, (page-1)*10)
+
+	rows, err := query(sqlString, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]DeckWithTimeline, 0)
+	for rows.Next() {
+		var d DeckWithTimeline
+		if err := rows.Scan(&d.Id, &d.Name, &d.CardCount, &d.IsPublicReadOnly, &d.TimelineId, &d.TimelineName); err != nil {
+			log.Println(err)
+			return nil, errors.New("failed to scan row in query results")
+		}
+		result = append(result, d)
+	}
+	return result, nil
+}
+
+// CountDecksWithTimeline is gsDatabase.CountDecks with the same optional
+// timeline filter SearchDecksWithTimeline takes, for that page's pagination.
+func CountDecksWithTimeline(name string, timelineFilter uuid.UUID) (int, error) {
+	name = "%" + name + "%"
+
+	sqlString := `
+		SELECT COUNT(*)
+		FROM DECK AS D
+		LEFT JOIN TIMELINE_TRIVIA_DECK_TIMELINE AS DT ON DT.DECK_ID = D.ID
+		WHERE D.NAME LIKE ?
+	`
+	args := []interface{}{name}
+	if timelineFilter != uuid.Nil {
+		sqlString += ` AND COALESCE(DT.TIMELINE_TRIVIA_TIMELINE_ID, ?) = ?`
+		args = append(args, DefaultTimelineId, timelineFilter)
+	}
+
+	rows, err := query(sqlString, args...)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var count int
+	for rows.Next() {
+		if err := rows.Scan(&count); err != nil {
+			log.Println(err)
+			return 0, errors.New("failed to scan row in query results")
+		}
+	}
+	return count, nil
 }
 
 // SeedDefaultTimelineIfEmpty seeds the well-known "Real Life" timeline and

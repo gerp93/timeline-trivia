@@ -252,13 +252,16 @@ No cards found with that search criteria.
     </p>
     <pre>{ "era": string, "year": number, "event": string, "category": string }</pre>
     <p>
-        <code>era</code> and <code>category</code> must each exactly match
-        one already defined for this deck's timeline (see
-        <a href="/timelines">Timelines</a>), and <code>year</code> is the
-        year <em>within</em> the named era — the same "pick an era, type
-        the in-era year" a card's Year field uses, not the raw absolute
-        year. Cards whose text already exists in this deck are skipped.
-        Max 1000 cards, 2&nbsp;MB per upload.
+        <code>category</code> must exactly match one already defined for
+        this deck's timeline. <code>era</code> matches by
+        <strong>abbreviation</strong> (e.g. <code>"B.C.E"</code>,
+        <code>"BBY"</code>), not full name — an era with no abbreviation
+        set falls back to matching by its full name instead. See
+        <a href="/timelines">Timelines</a> for both. <code>year</code> is
+        the year <em>within</em> the named era — the same "pick an era,
+        type the in-era year" a card's Year field uses, not the raw
+        absolute year. Cards whose text already exists in this deck are
+        skipped. Max 1000 cards, 2&nbsp;MB per upload.
     </p>
     <form
         hx-post="/api/deck/{{.Deck.Id}}/card-import"
