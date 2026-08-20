@@ -77,45 +77,20 @@ func SetDeckTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exists, err := database.TimelineExists(timelineId)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+	// A deck can only be assigned to a timeline that exists and has at
+	// least one era and one category — otherwise card create/edit would
+	// have nothing to offer in the Era/Category dropdowns, and there'd be
+	// no way to author a card for it at all.
+	if err := database.ValidateTimelineAssignable(timelineId); err != nil {
+		switch {
+		case errors.Is(err, database.ErrTimelineDoesNotExist),
+			errors.Is(err, database.ErrTimelineHasNoEras),
+			errors.Is(err, database.ErrTimelineHasNoCategories):
+			w.WriteHeader(http.StatusBadRequest)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
 		_, _ = w.Write([]byte(err.Error()))
-		return
-	}
-	if !exists {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte("Selected timeline does not exist."))
-		return
-	}
-
-	// A deck can only be assigned to a timeline that has at least one era —
-	// otherwise card create/edit would have nothing to offer in the Era
-	// dropdown, and there'd be no way to author a card for it at all.
-	eras, err := database.GetErasForTimeline(timelineId)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("Failed to check timeline eras."))
-		return
-	}
-	if len(eras) == 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte("This timeline has no eras yet. Add at least one era before assigning decks to it."))
-		return
-	}
-
-	// Same invariant as eras, but with higher stakes: category is a
-	// required field on every card, so a deck with nothing to offer in the
-	// Category dropdown couldn't author any card at all.
-	categories, err := database.GetCategoriesForTimeline(timelineId)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("Failed to check timeline categories."))
-		return
-	}
-	if len(categories) == 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte("This timeline has no categories yet. Add at least one category before assigning decks to it."))
 		return
 	}
 

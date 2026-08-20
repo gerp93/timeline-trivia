@@ -203,6 +203,116 @@ func Timelines(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Decks displays the deck list. Overrides the framework's own /decks page
+// (see main.go's Features.DecksListPageOverride) so this game's own
+// timeline column and filter can be injected into the shared decks.html
+// chrome via deck-list-timeline-fields.html's deck-list-extra-* blocks —
+// and so deck creation can ask for a timeline via that same file's
+// deck-create-extra-fields block, read back by game.OnDeckCreated.
+func Decks(w http.ResponseWriter, r *http.Request) {
+	basePageData := gsApi.GetBasePageData(r)
+	basePageData.PageTitle = "Timeline Trivia - Decks"
+
+	var name string
+	var page int
+	var timelineFilter uuid.UUID
+	params := r.URL.Query()
+	for key, val := range params {
+		switch key {
+		case "name":
+			name = val[0]
+		case "page":
+			page, _ = strconv.Atoi(val[0])
+		case "timeline":
+			if id, err := uuid.Parse(val[0]); err == nil {
+				timelineFilter = id
+			}
+		}
+	}
+
+	totalRowCount, err := database.CountDecksWithTimeline(name, timelineFilter)
+	if err != nil {
+		totalRowCount = 0
+	}
+	totalPageCount := max((totalRowCount+9)/10, 1)
+
+	if page < 1 {
+		page = 1
+	}
+	if page > totalPageCount {
+		page = totalPageCount
+	}
+
+	decks, err := database.SearchDecksWithTimeline(name, timelineFilter, page)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get table rows"))
+		return
+	}
+
+	timelines, err := database.GetTimelines()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get timelines"))
+		return
+	}
+
+	// Only timelines with at least one era and category are offered when
+	// creating a deck — game.OnDeckCreated rejects an assignment to one
+	// without both server-side too (via database.ValidateTimelineAssignable),
+	// this just keeps the create dropdown from offering a choice that
+	// would fail.
+	timelinesWithEras, err := database.GetTimelinesWithEras()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to get timelines"))
+		return
+	}
+	assignableTimelines := make([]database.Timeline, 0, len(timelinesWithEras))
+	for _, t := range timelinesWithEras {
+		if len(t.Eras) > 0 && len(t.Categories) > 0 {
+			assignableTimelines = append(assignableTimelines, t.Timeline)
+		}
+	}
+
+	tmpl, err := gsApiPages.ParseGameFragment(
+		static.StaticFiles,
+		"html/pages/body/decks.html",
+		"html/pages/body/deck-list-timeline-fields.html",
+	)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("failed to parse HTML"))
+		return
+	}
+
+	type data struct {
+		gsApi.BasePageData
+		Name                string
+		Page                int
+		LastPage            int
+		RowCount            int
+		Decks               []database.DeckWithTimeline
+		Timelines           []database.Timeline
+		AssignableTimelines []database.Timeline
+		SelectedTimelineId  uuid.UUID
+		DefaultTimelineId   uuid.UUID
+	}
+
+	_ = tmpl.ExecuteTemplate(w, "base", data{
+		BasePageData:        basePageData,
+		Name:                name,
+		Page:                page,
+		LastPage:            totalPageCount,
+		RowCount:            totalRowCount,
+		Decks:               decks,
+		Timelines:           timelines,
+		AssignableTimelines: assignableTimelines,
+		SelectedTimelineId:  timelineFilter,
+		DefaultTimelineId:   database.DefaultTimelineId,
+	})
+}
+
 // Deck displays a single deck's cards. The shared header/export/edit-deck
 // dialog/danger-zone/pagination chrome comes from the framework's
 // deck-detail-chrome.html; this game's own card table, search field, and

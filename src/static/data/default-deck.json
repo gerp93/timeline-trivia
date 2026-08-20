@@ -1,7 +1,7 @@
 [
-  { "era": "Before Common Era", "year": 2560, "event": "Construction of the Great Pyramid of Giza is completed.", "category": "History" },
-  { "era": "Before Common Era", "year": 776, "event": "The first recorded Olympic Games are held in ancient Greece.", "category": "Sports" },
-  { "era": "Before Common Era", "year": 44, "event": "Julius Caesar is assassinated on the Ides of March.", "category": "History" },
+  { "era": "B.C.E", "year": 2560, "event": "Construction of the Great Pyramid of Giza is completed.", "category": "History" },
+  { "era": "B.C.E", "year": 776, "event": "The first recorded Olympic Games are held in ancient Greece.", "category": "Sports" },
+  { "era": "B.C.E", "year": 44, "event": "Julius Caesar is assassinated on the Ides of March.", "category": "History" },
   { "era": "Common Era", "year": 79, "event": "Mount Vesuvius erupts, destroying Pompeii and Herculaneum.", "category": "History" },
   { "era": "Common Era", "year": 105, "event": "Ts'ai Lun invents the modern papermaking process in China.", "category": "Inventions" },
   { "era": "Common Era", "year": 793, "event": "Vikings raid the monastery at Lindisfarne, marking the start of the Viking Age.", "category": "History" },

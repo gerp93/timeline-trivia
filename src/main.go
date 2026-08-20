@@ -47,10 +47,14 @@ func main() {
 	gsDatabase.SetEnvVarPrefix("TIMELINE_TRIVIA")
 	gsApiUser.SetMaxWinGifBytes(1000 * 1024)
 	features := gsBootstrap.Features{
-		Decks:           true,
-		WinCelebration:  true,
-		LoseCelebration: true,
-		LobbyTurnTimer:  true,
+		Decks: true,
+		// This game injects its own timeline column/filter into the deck
+		// list and asks for a timeline on deck creation (see
+		// apiPages.Decks, game.OnDeckCreated), so it mounts /decks itself.
+		DecksListPageOverride: true,
+		WinCelebration:        true,
+		LoseCelebration:       true,
+		LobbyTurnTimer:        true,
 	}
 	gsBootstrap.MountFeatures(features)
 
@@ -103,6 +107,9 @@ func main() {
 	http.Handle("GET /about", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.About)))
 	http.Handle("GET /timelines", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Timelines)))
 	http.Handle("GET /flagged-cards", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.FlaggedCards)))
+	// Overrides the framework's own /decks (see Features.DecksListPageOverride
+	// above) with this game's timeline-column/filter-aware version.
+	http.Handle("GET /decks", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Decks)))
 	http.Handle("GET /deck/{deckId}", gsApi.MiddlewareForPages(http.HandlerFunc(apiPages.Deck)))
 
 	// stats pages
