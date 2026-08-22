@@ -1,4 +1,4 @@
-<div id="timeline-container">
+<div id="timeline-container" data-turn-seconds-remaining="{{.SecondsRemaining}}">
     {{if and (eq .GameStatus "active") .CurrentPlayerName}}
     <div class="whose-turn-banner">
         <span class="whose-turn-icon">🎯</span>

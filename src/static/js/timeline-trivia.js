@@ -306,6 +306,18 @@ function restartTurnTimer(lobbyId) {
 // is showing" rule above. Everyone watches the same clock, but only the
 // guesser's own browser reports the timeout — the server re-checks whose
 // turn it is regardless.
+//
+// The seconds it counts down from come from the server (the
+// #timeline-container fragment's data-turn-seconds-remaining, computed
+// against TIMELINE_TRIVIA_GAME.CURRENT_TURN_STARTED_ON_DATE), not from
+// timelineTriviaTurnTimerSeconds directly. Every client used to start its
+// own fresh countdown from the full configured duration the moment ITS OWN
+// result/celebration popup happened to clear — since players can click
+// through those popups at very different speeds, whoever dismissed fastest
+// got a head start on the same turn's clock, and the round could end while
+// slower/spectating clients were still mid-animation. Reading the
+// server-computed remaining time instead means every client — however fast
+// or slow it got here — converges on the same true deadline.
 function doRestartTurnTimer(lobbyId) {
     const timerEl = document.getElementById("turn-timer");
     if (!timerEl || typeof gsTimer === "undefined") return;
@@ -326,7 +338,11 @@ function doRestartTurnTimer(lobbyId) {
         return;
     }
 
-    gsTimer.start(timerEl, timelineTriviaTurnTimerSeconds, () => {
+    const container = document.getElementById("timeline-container");
+    const serverRemaining = container ? parseInt(container.dataset.turnSecondsRemaining, 10) : NaN;
+    const secondsRemaining = Number.isFinite(serverRemaining) ? serverRemaining : timelineTriviaTurnTimerSeconds;
+
+    gsTimer.start(timerEl, secondsRemaining, () => {
         if (!isMyTurn) return;
         fetch("/api/timeline-trivia/" + lobbyId + "/timeout", { method: "POST" })
             .catch(e => console.error("[TimelineTrivia] timeout error:", e));
