@@ -1,6 +1,7 @@
 package apiTimelineTrivia
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -24,6 +25,46 @@ var timelineTriviaDeckId = uuid.MustParse("88026803-d22a-11f0-b4d2-60cf84649547"
 
 // defaultCardsToWin is the target a lobby gets when nothing else is specified.
 const defaultCardsToWin = 10
+
+// turnTimerGraceSeconds is added on top of the configured per-turn duration
+// before a player can actually start losing real time. It exists because the
+// result/win-celebration popup and the 3-2-1 turn countdown (see
+// timeline-trivia.js) are shown independently on every client and can be
+// clicked through at different speeds by different players — without a fixed
+// grace window, whoever dismisses their popup fastest gets their own local
+// clock started earliest, so the round could end while slower/spectating
+// clients were still mid-animation. 8 seconds covers the longest any of
+// those popups can naturally stay up on their own (5s "revealed" popup + 3s
+// turn countdown), so a player who lets them run their full course — or
+// clicks through instantly — always sees the same true remaining time; only
+// someone who leaves a popup up longer than that (e.g. away from keyboard)
+// actually starts losing seconds, and identically for every player.
+const turnTimerGraceSeconds = 8
+
+// turnSecondsRemaining computes how many seconds are left in the current
+// turn from the server's own clock (TimelineTriviaGame.TurnElapsedSeconds,
+// itself computed by the database — see that field's comment for why), so
+// every client anchors its countdown to the same truth instead of each one
+// starting a fresh local countdown whenever its own popup happens to clear.
+// Returns 0 when there's no timer configured, no turn in progress, or time
+// is already up.
+func turnSecondsRemaining(timerSeconds int, turnElapsed sql.NullInt64) int {
+	if timerSeconds <= 0 || !turnElapsed.Valid {
+		return 0
+	}
+	elapsed := turnElapsed.Int64 - turnTimerGraceSeconds
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	remaining := timerSeconds - int(elapsed)
+	if remaining < 0 {
+		remaining = 0
+	}
+	if remaining > timerSeconds {
+		remaining = timerSeconds
+	}
+	return remaining
+}
 
 // resultPayload is the body of a "result:" websocket message — the popup and
 // the bottom-of-screen status line every client shows after a guess resolves.
@@ -757,6 +798,12 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 	isSteal := game.CurrentPlayerId.Valid && game.RoundStarterPlayerId.Valid &&
 		game.CurrentPlayerId.UUID != game.RoundStarterPlayerId.UUID
 
+	timerSeconds, timerErr := gsDatabase.GetLobbyTurnTimerSeconds(lobbyId)
+	if timerErr != nil {
+		log.Println(timerErr)
+	}
+	secondsRemaining := turnSecondsRemaining(timerSeconds, game.TurnElapsedSeconds)
+
 	eras, erasErr := database.GetErasForTimeline(game.TimelineId)
 	if erasErr != nil {
 		log.Println(erasErr)
@@ -784,6 +831,7 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 		CurrentPlayerName string
 		IsSteal           bool
 		MissedByNames     string
+		SecondsRemaining  int
 	}
 
 	_ = tmpl.Execute(w, data{
@@ -794,6 +842,7 @@ func GetTimeline(w http.ResponseWriter, r *http.Request) {
 		CurrentPlayerName: currentPlayerName,
 		IsSteal:           isSteal,
 		MissedByNames:     strings.Join(missedNames, ", "),
+		SecondsRemaining:  secondsRemaining,
 	})
 }
 

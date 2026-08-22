@@ -73,10 +73,21 @@ type TimelineTriviaGame struct {
 	CreatedOnDate        time.Time
 	CurrentPlayerId      uuid.NullUUID
 	RoundStarterPlayerId uuid.NullUUID
-	GameStatus           string
-	CardsToWin           int
-	WinnerId             uuid.NullUUID
-	TimelineId           uuid.UUID
+	// TurnElapsedSeconds is how many seconds have passed since
+	// CURRENT_TURN_STARTED_ON_DATE, computed by the database itself
+	// (TIMESTAMPDIFF) rather than diffed against Go's time.Now() — the
+	// go-sql-driver defaults to treating scanned DATETIME values as UTC
+	// regardless of the DB server's actual session timezone, so comparing a
+	// scanned timestamp against time.Now() can be off by whatever that
+	// offset is. Doing the diff in SQL keeps both sides of the subtraction
+	// on the DB server's own clock, immune to that mismatch. Invalid
+	// (NULL) when no turn has started yet — see the column comment on
+	// TIMELINE_TRIVIA_GAME.
+	TurnElapsedSeconds sql.NullInt64
+	GameStatus         string
+	CardsToWin         int
+	WinnerId           uuid.NullUUID
+	TimelineId         uuid.UUID
 }
 
 // TimelineTriviaTimelineCard represents a card in a player's timeline
@@ -193,6 +204,7 @@ func getTimelineTriviaGameByColumn(column string, value uuid.UUID) (TimelineTriv
 			CREATED_ON_DATE,
 			CURRENT_PLAYER_ID,
 			ROUND_STARTER_PLAYER_ID,
+			TIMESTAMPDIFF(SECOND, CURRENT_TURN_STARTED_ON_DATE, NOW()),
 			GAME_STATUS,
 			CARDS_TO_WIN,
 			WINNER_ID,
@@ -213,6 +225,7 @@ func getTimelineTriviaGameByColumn(column string, value uuid.UUID) (TimelineTriv
 			&game.CreatedOnDate,
 			&game.CurrentPlayerId,
 			&game.RoundStarterPlayerId,
+			&game.TurnElapsedSeconds,
 			&game.GameStatus,
 			&game.CardsToWin,
 			&game.WinnerId,
@@ -960,7 +973,7 @@ func ResolveCardRound(gameId uuid.UUID) error {
 
 	sqlString := `
 		UPDATE TIMELINE_TRIVIA_GAME
-		SET CURRENT_PLAYER_ID = ?, ROUND_STARTER_PLAYER_ID = ?
+		SET CURRENT_PLAYER_ID = ?, ROUND_STARTER_PLAYER_ID = ?, CURRENT_TURN_STARTED_ON_DATE = CURRENT_TIMESTAMP()
 		WHERE ID = ?
 	`
 	if err := execute(sqlString, nextPlayerId, nextPlayerId, gameId); err != nil {
@@ -1021,7 +1034,11 @@ func GetTimelineTriviaPlayers(gameId uuid.UUID) ([]TimelineTriviaPlayer, error) 
 
 // SetTimelineTriviaCurrentPlayer sets whose turn it is
 func SetTimelineTriviaCurrentPlayer(gameId uuid.UUID, playerId uuid.UUID) error {
-	sqlString := `UPDATE TIMELINE_TRIVIA_GAME SET CURRENT_PLAYER_ID = ? WHERE ID = ?`
+	sqlString := `
+		UPDATE TIMELINE_TRIVIA_GAME
+		SET CURRENT_PLAYER_ID = ?, CURRENT_TURN_STARTED_ON_DATE = CURRENT_TIMESTAMP()
+		WHERE ID = ?
+	`
 	return execute(sqlString, playerId, gameId)
 }
 
@@ -1186,7 +1203,7 @@ func StartTimelineTriviaGame(gameId uuid.UUID) error {
 	// this round's starter
 	sqlString := `
 		UPDATE TIMELINE_TRIVIA_GAME
-		SET GAME_STATUS = 'active', CURRENT_PLAYER_ID = ?, ROUND_STARTER_PLAYER_ID = ?
+		SET GAME_STATUS = 'active', CURRENT_PLAYER_ID = ?, ROUND_STARTER_PLAYER_ID = ?, CURRENT_TURN_STARTED_ON_DATE = CURRENT_TIMESTAMP()
 		WHERE ID = ?
 	`
 	if err := execute(sqlString, firstPlayer, firstPlayer, gameId); err != nil {
@@ -1236,7 +1253,7 @@ func ResetTimelineTriviaGame(gameId uuid.UUID) error {
 	// Reset game status to waiting
 	sqlResetGame := `
 		UPDATE TIMELINE_TRIVIA_GAME
-		SET GAME_STATUS = 'waiting', CURRENT_PLAYER_ID = NULL, ROUND_STARTER_PLAYER_ID = NULL, WINNER_ID = NULL
+		SET GAME_STATUS = 'waiting', CURRENT_PLAYER_ID = NULL, ROUND_STARTER_PLAYER_ID = NULL, WINNER_ID = NULL, CURRENT_TURN_STARTED_ON_DATE = NULL
 		WHERE ID = ?
 	`
 	if err := execute(sqlResetGame, gameId); err != nil {
