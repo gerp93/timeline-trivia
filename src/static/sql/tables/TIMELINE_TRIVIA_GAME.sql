@@ -8,6 +8,14 @@ CREATE TABLE IF NOT EXISTS TIMELINE_TRIVIA_GAME(
     -- active player after the STARTER, regardless of who wins the steal.
     CURRENT_PLAYER_ID UUID NULL,
     ROUND_STARTER_PLAYER_ID UUID NULL,
+    -- Set to NOW() every time CURRENT_PLAYER_ID changes to a real player
+    -- (steal, new round, game start). This is the one authoritative clock
+    -- the per-turn timer is measured against — every client computes its
+    -- remaining time from this instead of starting its own local countdown
+    -- whenever its own result/celebration popup happens to clear, which
+    -- used to let players who clicked through popups faster than others
+    -- get a head start (or lose real time) on the same turn's clock.
+    CURRENT_TURN_STARTED_ON_DATE DATETIME NULL,
     GAME_STATUS ENUM('waiting', 'active', 'finished') NOT NULL DEFAULT 'waiting',
     CARDS_TO_WIN INT NOT NULL DEFAULT 10,
     WINNER_ID UUID NULL,
