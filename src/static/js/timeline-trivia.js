@@ -398,8 +398,13 @@ function showTurnCountdown(label, onDone) {
         }
     }, 1000);
 
-    // Click to skip the countdown, same as the result popup allows.
-    backdrop.addEventListener("click", () => finish());
+    // Deliberately not click-to-dismiss: every client must sit through the
+    // same fixed countdown so doRestartTurnTimer's gsTimer.start() fires at
+    // the same real moment everywhere. A skippable backdrop let a
+    // fast-clicking player start their local clock seconds before a slower
+    // one — same starting "remaining seconds" value, different real start
+    // time — so that player's timer (and its timeout POST) fired early
+    // relative to everyone else's.
 }
 
 // showTimerChangeAnnouncement shows a brief message-only popup (no number),
@@ -435,7 +440,9 @@ function showTimerChangeAnnouncement(message, onDone) {
     dismissActivePopup = finish;
 
     const dismissTimer = setTimeout(finish, 1400);
-    backdrop.addEventListener("click", () => finish());
+    // Deliberately not click-to-dismiss — see showTurnCountdown's comment;
+    // this announcement always precedes a countdown/timer restart, so the
+    // same real-start-time drift applies here too.
 }
 
 function addChatMessage(message) {
@@ -549,6 +556,8 @@ function showResultPopup(payload, onDone) {
     if (hasCelebration) dismissAfter = 4000;
     const dismissTimer = setTimeout(finish, dismissAfter);
 
-    // Also allow click to dismiss
-    backdrop.addEventListener("click", () => finish());
+    // Deliberately not click-to-dismiss — see showTurnCountdown's comment.
+    // This popup's onDone is what kicks off the turn countdown / timer
+    // restart, so letting one client's popup close early would drift its
+    // timer start (and its timeout POST) ahead of everyone else's.
 }
