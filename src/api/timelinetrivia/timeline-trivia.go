@@ -236,6 +236,23 @@ func Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Choosing decks for a lobby is a read/use action, so a deck flagged
+	// public-readonly must pass; edit actions keep using UserHasDeckAccess.
+	userId := gsApi.GetUserId(r)
+	for _, deckId := range deckIds {
+		canRead, err := gsDatabase.UserCanReadDeck(userId, deckId)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("failed to check deck access"))
+			return
+		}
+		if !canRead {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte("you do not have access to one of the selected decks"))
+			return
+		}
+	}
+
 	timelineId, err := uuid.Parse(r.FormValue("timelineId"))
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)

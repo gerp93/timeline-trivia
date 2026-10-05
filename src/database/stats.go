@@ -76,30 +76,6 @@ func appendEraFilter(sqlString string, args []interface{}, eraId uuid.UUID) (str
 	return sqlString, args, nil
 }
 
-// UserCanReadDeck reports whether a viewer may read a deck (public, granted, or
-// admin, and not hidden) — used to gate the per-card stats page.
-func UserCanReadDeck(viewerId uuid.UUID, deckId uuid.UUID) (bool, error) {
-	sqlString := `
-		SELECT COUNT(*)
-		FROM DECK AS D
-		WHERE D.ID = ?
-			AND ` + readableDeckPredicate
-	rows, err := query(sqlString, deckId, viewerId, viewerId)
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-
-	var count int
-	for rows.Next() {
-		if err := rows.Scan(&count); err != nil {
-			log.Println(err)
-			return false, errors.New("failed to scan row in query results")
-		}
-	}
-	return count > 0, nil
-}
-
 // StatUser is a user's overall play totals, scoped to the viewer's readable
 // decks (and, per GetUserStatTotals's params, optionally to one timeline).
 type StatUser struct {
