@@ -524,7 +524,7 @@ func StatsCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	canRead, err := database.UserCanReadDeck(basePageData.User.Id, deckId)
+	canRead, err := gsDatabase.UserCanReadDeck(basePageData.User.Id, deckId)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("failed to check deck access"))
